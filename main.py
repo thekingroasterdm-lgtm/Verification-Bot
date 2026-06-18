@@ -319,7 +319,7 @@ def render_success(username=""):
 
 
 # Home page / portal landing index
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def home_page():
     # Generate the OAuth authorize URL dynamically
     params = {
@@ -332,7 +332,7 @@ async def home_page():
     return HTMLResponse(content=HOME_HTML.replace("{{auth_url}}", auth_url))
 
 # Guide Page
-@app.get("/guide", response_class=HTMLResponse)
+@app.api_route("/guide", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def guide_page():
     return HTMLResponse(content=GUIDE_HTML)
 
