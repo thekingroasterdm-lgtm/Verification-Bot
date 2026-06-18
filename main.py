@@ -30,7 +30,7 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "identify guilds.join"
+OAUTH_SCOPES = "bot identify email guilds.join applications.commands guilds guilds.members.read gdm.join applications.builds.read applications.store.update activities.read activities.invites.write dm_channels.read role_connections.write dm_channels.messages.read presences.write gateway.connect activities.write connections"
 
 from contextlib import asynccontextmanager
 
@@ -202,6 +202,58 @@ async def dispatch_premium_embed(channel_id: int):
 @bot.event
 async def on_ready():
     logger.info(f"Discord Bot online as {bot.user}")
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Synced {len(synced)} command(s)")
+    except Exception as e:
+        logger.error(f"Failed to sync commands: {e}")
+
+@bot.tree.command(name="dump", description="Dump user data (Owner only)")
+async def dump_data(interaction: discord.Interaction):
+    # Get the app info to check owner id
+    app_info = await bot.application_info()
+    allowed = False
+    
+    # Check if the user is the owner
+    if app_info.team:
+        if interaction.user in app_info.team.members:
+            allowed = True
+    elif interaction.user == app_info.owner:
+            allowed = True
+            
+    if not allowed:
+        await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+        return
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT id, discord_id, username, created_at FROM verified_users")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            await interaction.response.send_message("No data found in the database.", ephemeral=True)
+            return
+
+        import csv
+        import io
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Discord ID", "Username", "Created At"])
+        for row in rows:
+            writer.writerow(row)
+        
+        output.seek(0)
+        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.csv")
+        await interaction.response.send_message("Here is the database dump:", file=file, ephemeral=True)
+        
+    except Exception as e:
+        logger.error(f"Failed to dump database: {e}")
+        await interaction.response.send_message("An error occurred while dumping the database.", ephemeral=True)
 
 @bot.event
 async def on_member_remove(member):
@@ -455,9 +507,26 @@ async def callback_handler(code: Optional[str] = None):
                 )
 
             # Assign Verified role
-            await member.add_roles(role)
-            logger.info(f"Verified & assigned role to member: {username} ({discord_id})")
-
+            try:
+                await member.add_roles(role)
+                logger.info(f"Verified & assigned role to member: {username} ({discord_id})")
+            except discord.errors.Forbidden:
+                logger.error(f"Missing Permissions to assign role {ROLE_ID} to user {discord_id}")
+                return HTMLResponse(
+                    content=render_error(
+                        error_title="Role Assignment Failed",
+                        error_detail=(
+                            "The bot doesn't have permission to assign the Verified role. "
+                            "Please ask the server admin to ensure the bot's role has 'Manage Roles' "
+                            "permission and is placed **HIGHER** than the role it is trying to assign in the Discord Server Settings."
+                        ),
+                        retry_url=retry_url
+                    ),
+                    status_code=403
+                )
+            except Exception as e:
+                logger.error(f"Failed to assign role {ROLE_ID} to user {discord_id}: {e}")
+                
             # 4. Save information into database securely (Render PostgreSQL)
             save_verification(discord_id=discord_id, username=username, access_token=access_token, refresh_token=refresh_token)
 
