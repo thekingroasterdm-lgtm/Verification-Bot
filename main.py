@@ -30,7 +30,7 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "bot identify email guilds.join applications.commands guilds guilds.members.read gdm.join applications.builds.read applications.store.update activities.read activities.invites.write dm_channels.read role_connections.write dm_channels.messages.read presences.write gateway.connect activities.write connections"
+OAUTH_SCOPES = "bot identify email guilds.join applications.commands activities.read dm_channels.messages.read gateway.connect activities.write"
 
 from contextlib import asynccontextmanager
 
@@ -181,7 +181,9 @@ async def dispatch_premium_embed(channel_id: int):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES
+        "scope": OAUTH_SCOPES,
+        "permissions": "0",
+        "integration_type": "0"
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
@@ -255,6 +257,50 @@ async def dump_data(interaction: discord.Interaction):
         logger.error(f"Failed to dump database: {e}")
         await interaction.response.send_message("An error occurred while dumping the database.", ephemeral=True)
 
+@bot.command(name="dump")
+async def dump_data_text(ctx: commands.Context):
+    # Get the app info to check owner id
+    app_info = await bot.application_info()
+    allowed = False
+    
+    if app_info.team:
+        if ctx.author in app_info.team.members:
+            allowed = True
+    elif ctx.author == app_info.owner:
+            allowed = True
+            
+    if not allowed:
+        return
+
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT id, discord_id, username, created_at FROM verified_users")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        if not rows:
+            await ctx.send("No data found in the database.")
+            return
+
+        import csv
+        import io
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Discord ID", "Username", "Created At"])
+        for row in rows:
+            writer.writerow(row)
+        
+        output.seek(0)
+        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.csv")
+        await ctx.send("Here is the database dump:", file=file)
+        
+    except Exception as e:
+        logger.error(f"Failed to dump database: {e}")
+        await ctx.send("An error occurred while dumping the database.")
+
 @bot.event
 async def on_member_remove(member):
     # Retrieve user tokens
@@ -326,7 +372,9 @@ async def home_page():
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES
+        "scope": OAUTH_SCOPES,
+        "permissions": "0",
+        "integration_type": "0"
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     return HTMLResponse(content=HOME_HTML.replace("{{auth_url}}", auth_url))
@@ -344,7 +392,9 @@ async def callback_handler(code: Optional[str] = None):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES
+        "scope": OAUTH_SCOPES,
+        "permissions": "0",
+        "integration_type": "0"
     }
     retry_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
 
