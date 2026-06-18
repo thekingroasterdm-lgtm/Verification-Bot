@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>SM GrowMart HQ • Gateway</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f9fafb; overflow-x: hidden; }
+        .display-font { font-family: 'Space Grotesk', sans-serif; }
+        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .discord-mock { background-color: #313338; color: #dbdee1; font-family: 'gg sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen relative py-12 px-4 md:px-8 selection:bg-indigo-500/30">
+    <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-0 right-0 w-[500px] h-[500px] bg-indigo-600/20 rounded-full blur-[150px]"></div>
+        <div class="absolute bottom-0 left-0 w-[500px] h-[500px] bg-blue-600/10 rounded-full blur-[150px]"></div>
+    </div>
+
+    <div class="z-10 w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+        
+        <!-- Left Side: Discord Panel Preview -->
+        <div class="space-y-6 lg:col-span-7 order-2 lg:order-1">
+            <div class="space-y-2">
+                <h2 class="text-2xl font-bold text-white display-font flex items-center gap-2">
+                    <svg class="w-6 h-6 text-[#5865F2]" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
+                    Deployable Embed Preview
+                </h2>
+                <p class="text-zinc-400 text-sm leading-relaxed">This simulates exactly how the interactive embed will appear inside your Discord channel.</p>
+            </div>
+            
+            <div class="discord-mock rounded-xl border border-[#1e1f22] md:p-5 p-3 shadow-2xl relative overflow-hidden backdrop-blur-md bg-[#313338]/95 max-w-[550px]">
+                <div class="flex items-start gap-4">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 shrink-0 border border-white/10 flex items-center justify-center text-sm font-bold text-white shadow-lg">HQ</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-baseline gap-2 mb-1">
+                            <span class="font-bold text-white hover:underline cursor-pointer">SM GrowMart HQ</span>
+                            <span class="bg-[#5865F2] text-white text-[10px] px-1.5 py-0.5 rounded flex items-center shrink-0 uppercase tracking-wide font-bold">
+                                <svg class="w-3 h-3 mr-0.5 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Bot
+                            </span>
+                            <span class="text-xs text-[#80848e]">Today at 12:00 PM</span>
+                        </div>
+                        
+                        <!-- Embed Container -->
+                        <div class="bg-[#2b2d31] rounded-[4px] border-l-4 border-[#1e1f22] overflow-hidden mt-1 max-w-lg shadow-[0_4px_6px_rgba(0,0,0,0.2)] pb-[2px]">
+                            <div class="p-4 space-y-4">
+                                <div class="text-[#dbdee1] text-[15px] leading-[1.375rem] whitespace-pre-wrap"><span class="font-bold">SM GrowMart HQ</span>
+
+<span class="text-emerald-400">🛡️</span> Secure your access and unlock the complete server experience.
+
+<span class="font-bold text-[#dbdee1]">Verified Members Receive</span>
+<div class="mt-1 pl-3 border-l-2 border-[#4E5058]/40 text-[#dbdee1]">
+<span class="text-emerald-400">✓</span> Instant role assignment
+<span class="text-emerald-400">✓</span> Exclusive channels unlocked
+<span class="text-emerald-400">✓</span> Enhanced account security
+</div>
+<span class="font-bold">📖 Need Help?</span> <a href="/guide" class="text-[#00a8fc] hover:underline cursor-pointer">Read the Verification Guide Here</a>
+
+<span class="text-[#80848e] text-xs">🔒 Secure OAuth authorization required for verification.</span></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Buttons -->
+                        <div class="mt-2.5">
+                            <a href="{{auth_url}}" class="inline-flex items-center gap-2 bg-[#4752c4] hover:bg-[#5865F2] text-white px-4 py-[6px] rounded-[3px] text-sm font-medium transition-colors cursor-pointer w-auto shadow-sm tracking-wide">
+                                Verify Identity Now
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Side: Portal Actions -->
+        <div class="lg:col-span-5 glass-panel rounded-3xl p-8 shadow-2xl relative order-1 lg:order-2 border-t border-t-white/10 flex flex-col justify-center min-h-[480px]">
+            <div class="mb-auto">
+                <div class="inline-block px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-indigo-400 text-xs font-semibold tracking-wide uppercase mb-6 shadow-sm">
+                    Identity Gateway Center
+                </div>
+                
+                <h1 class="text-4xl lg:text-5xl font-bold text-white mb-4 display-font tracking-tight drop-shadow-sm">SM GrowMart</h1>
+                <p class="text-zinc-400 shadow-sm leading-relaxed mb-10">
+                    The definitive verification portal. Use the visual tools below to simulate the user experience safely in the browser.
+                </p>
+            </div>
+            
+            <div class="space-y-4 mt-auto">
+                <a href="{{auth_url}}" class="group relative flex items-center justify-center gap-3 w-full py-4 px-6 bg-white hover:bg-zinc-100 text-black font-bold rounded-xl transition duration-300 shadow-[0_0_20px_-5px_rgba(255,255,255,0.4)]">
+                    Start Authorize Flow
+                    <svg class="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                </a>
+                
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <a href="/guide" class="flex items-center justify-center gap-2 py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-sm font-medium text-white transition-colors cursor-pointer">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                        Explore Guide
+                    </a>
+                    <a href="/view-error" class="flex items-center justify-center gap-2 py-3.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl text-sm font-medium text-white transition-colors cursor-pointer">
+                        <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        Test Failures
+                    </a>
+                </div>
+            </div>
+
+            <div class="mt-10 border-t border-white/5 pt-6 flex items-center justify-between text-xs text-zinc-500 font-mono">
+                <span>Deployed on Render</span>
+                <span class="flex items-center gap-2 text-emerald-500/80"><div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div> Secure Socket</span>
+            </div>
+        </div>
+        
+    </div>
+</body>
+</html>
