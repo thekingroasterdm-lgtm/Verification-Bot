@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Verification Failed - SM GrowMart HQ</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f9fafb; overflow-x: hidden; }
+        .display-font { font-family: 'Space Grotesk', sans-serif; }
+        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.05); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen relative selection:bg-rose-500/30">
+    <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+        <div class="absolute top-1/4 left-1/4 w-96 h-96 bg-rose-600/20 rounded-full blur-[128px]"></div>
+        <div class="absolute bottom-1/4 right-1/4 w-96 h-96 bg-red-600/20 rounded-full blur-[128px]"></div>
+    </div>
+    <div class="glass-panel w-full max-w-md rounded-3xl p-8 z-10 shadow-2xl relative overflow-hidden transform transition-all duration-500 hover:scale-[1.01]">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-rose-500 to-red-600"></div>
+        <div class="mx-auto w-20 h-20 bg-gradient-to-br from-rose-500/20 to-red-600/20 rounded-2xl flex items-center justify-center border border-rose-500/30 shadow-[0_0_40px_-10px_rgba(244,63,94,0.4)] mb-8">
+            <svg class="w-10 h-10 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>
+        </div>
+        <div class="text-center space-y-3 mb-8">
+            <h1 class="text-3xl font-bold tracking-tight text-white drop-shadow-sm display-font">Verification Failed</h1>
+            <p class="text-rose-400 font-medium">{error_title}</p>
+        </div>
+        <div class="bg-black/40 rounded-2xl p-5 border border-rose-500/10 space-y-2">
+            <span class="text-zinc-300 font-semibold block text-sm mb-2">Error Details</span>
+            <p class="text-sm text-zinc-400 leading-relaxed">{error_detail}</p>
+        </div>
+        <a href="{retry_url}" class="mt-8 block w-full py-3.5 bg-white text-black hover:bg-zinc-200 text-center font-bold rounded-xl transition duration-300 shadow-[0_0_20px_-5px_rgba(255,255,255,0.3)]">
+            Try Auto-Verification Again
+        </a>
+    </div>
+</body>
+</html>
