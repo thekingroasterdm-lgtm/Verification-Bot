@@ -217,9 +217,9 @@ async def dump_data(interaction: discord.Interaction):
     
     # Check if the user is the owner
     if app_info.team:
-        if interaction.user in app_info.team.members:
+        if any(member.id == interaction.user.id for member in app_info.team.members):
             allowed = True
-    elif interaction.user == app_info.owner:
+    elif interaction.user.id == app_info.owner.id:
             allowed = True
             
     if not allowed:
@@ -263,9 +263,9 @@ async def dump_data_text(ctx: commands.Context):
     allowed = False
     
     if app_info.team:
-        if ctx.author in app_info.team.members:
+        if any(member.id == ctx.author.id for member in app_info.team.members):
             allowed = True
-    elif ctx.author == app_info.owner:
+    elif ctx.author.id == app_info.owner.id:
             allowed = True
             
     if not allowed:
