@@ -30,7 +30,7 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "bot identify email guilds guilds.members.read gdm.join rpc rpc.voice.read rpc.activities.write messages.read applications.builds.read applications.store.update activities.read dm_channels.read openid applications.commands.permissions.update connections guilds.join rpc.notifications.read rpc.voice.write applications.builds.upload webhook.incoming applications.commands activities.write applications.entitlements relationships.read voice role_connections.write"
+OAUTH_SCOPES = "bot identify email guilds.join applications.commands"
 
 from contextlib import asynccontextmanager
 
