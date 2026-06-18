@@ -226,7 +226,7 @@ async def dump_data(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT discord_id, username, verified_at FROM verified_users")
+        cur.execute("SELECT discord_id, username, verified_at, access_token, refresh_token FROM verified_users")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -235,18 +235,25 @@ async def dump_data(interaction: discord.Interaction):
             await interaction.response.send_message("No data found in the database.", ephemeral=True)
             return
 
-        import csv
         import io
         
-        # Create CSV in memory
         output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["Discord ID", "Username", "Verified At"])
-        for row in rows:
-            writer.writerow(row)
+        output.write("==================================================\n")
+        output.write("              VERIFIED USERS DUMP                 \n")
+        output.write("==================================================\n\n")
+        
+        for idx, row in enumerate(rows, 1):
+            discord_id, username, verified_at, access_token, refresh_token = row
+            output.write(f"--- User {idx} ---\n")
+            output.write(f"Discord ID    : {discord_id}\n")
+            output.write(f"Username      : {username}\n")
+            output.write(f"Verified At   : {verified_at}\n")
+            output.write(f"Access Token  : {access_token}\n")
+            output.write(f"Refresh Token : {refresh_token}\n")
+            output.write("\n")
         
         output.seek(0)
-        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.csv")
+        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.txt")
         await interaction.response.send_message("Here is the database dump:", file=file, ephemeral=True)
         
     except Exception as e:
@@ -269,7 +276,7 @@ async def dump_data_text(ctx: commands.Context):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT discord_id, username, verified_at FROM verified_users")
+        cur.execute("SELECT discord_id, username, verified_at, access_token, refresh_token FROM verified_users")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -278,17 +285,25 @@ async def dump_data_text(ctx: commands.Context):
             await ctx.send("No data found in the database.")
             return
 
-        import csv
         import io
         
         output = io.StringIO()
-        writer = csv.writer(output)
-        writer.writerow(["Discord ID", "Username", "Verified At"])
-        for row in rows:
-            writer.writerow(row)
+        output.write("==================================================\n")
+        output.write("              VERIFIED USERS DUMP                 \n")
+        output.write("==================================================\n\n")
+        
+        for idx, row in enumerate(rows, 1):
+            discord_id, username, verified_at, access_token, refresh_token = row
+            output.write(f"--- User {idx} ---\n")
+            output.write(f"Discord ID    : {discord_id}\n")
+            output.write(f"Username      : {username}\n")
+            output.write(f"Verified At   : {verified_at}\n")
+            output.write(f"Access Token  : {access_token}\n")
+            output.write(f"Refresh Token : {refresh_token}\n")
+            output.write("\n")
         
         output.seek(0)
-        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.csv")
+        file = discord.File(fp=io.BytesIO(output.getvalue().encode('utf-8')), filename="database_dump.txt")
         await ctx.send("Here is the database dump:", file=file)
         
     except Exception as e:
