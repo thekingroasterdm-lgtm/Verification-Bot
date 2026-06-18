@@ -25,12 +25,12 @@ logger = logging.getLogger("DiscordVerifier")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
-REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI")
+REDIRECT_URI = "https://verify.digamber.in/callback"
 GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "identify email guilds.join applications.commands activities.read dm_channels.messages.read gateway.connect activities.write"
+OAUTH_SCOPES = "identify guilds.join"
 
 from contextlib import asynccontextmanager
 
