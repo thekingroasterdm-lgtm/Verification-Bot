@@ -25,7 +25,7 @@ logger = logging.getLogger("DiscordVerifier")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
 CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
-REDIRECT_URI = "https://verify.digamber.in/callback"
+REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://verify.digamber.in/callback")
 GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
@@ -208,6 +208,23 @@ async def on_ready():
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
 
+@bot.tree.command(name="setup", description="Send the verification embed to the current channel (Owner only)")
+async def setup_slash(interaction: discord.Interaction):
+    allowed = await bot.is_owner(interaction.user)
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(interaction.user.id) == owner_id_env:
+        allowed = True
+            
+    if not allowed:
+        await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+        return
+        
+    try:
+        await dispatch_premium_embed(interaction.channel_id)
+        await interaction.response.send_message("Verification embed has been sent successfully.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"Failed to send embed: {e}", ephemeral=True)
+
 @bot.tree.command(name="dump", description="Dump user data (Owner only)")
 async def dump_data(interaction: discord.Interaction):
     # Check if the user is the owner
@@ -258,6 +275,26 @@ async def dump_data(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Failed to dump database: {e}")
         await interaction.response.send_message("An error occurred while dumping the database.", ephemeral=True)
+
+@bot.command(name="setup")
+async def setup_embed(ctx: commands.Context):
+    # Check if the user is the owner
+    allowed = await bot.is_owner(ctx.author)
+    
+    # Fallback to OWNER_ID environment variable if set
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(ctx.author.id) == owner_id_env:
+        allowed = True
+            
+    if not allowed:
+        return
+        
+    try:
+        await dispatch_premium_embed(ctx.channel.id)
+        await ctx.send("Embed sent!", delete_after=5)
+        await ctx.message.delete()
+    except Exception as e:
+        await ctx.send(f"Failed to send embed: {e}", delete_after=5)
 
 @bot.command(name="dump")
 async def dump_data_text(ctx: commands.Context):
