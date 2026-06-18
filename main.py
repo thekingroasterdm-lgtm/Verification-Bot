@@ -30,6 +30,8 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
+OAUTH_SCOPES = "bot identify email guilds guilds.members.read gdm.join rpc rpc.voice.read rpc.video.read rpc.screenshare.read rpc.activities.write messages.read applications.builds.read applications.store.update activities.read activities.invites.write dm_channels.read presences.read relationships.write openid dm_channels.messages.write account.global_name.update sdk.social_layer_presence lobbies.write applications.commands.permissions.update identify.premium connections guilds.join guilds.channels.read rpc.notifications.read rpc.voice.write rpc.video.write applications.builds.upload rpc.screenshare.write webhook.incoming applications.commands activities.write applications.entitlements relationships.read voice role_connections.write dm_channels.messages.read presences.write gateway.connect payment_sources.country_code sdk.social_layer application_identities.write"
+
 # Initialize FastAPI App
 app = FastAPI(title="SM GrowMart HQ Verification Portal")
 
@@ -85,6 +87,22 @@ def save_verification(discord_id: str, username: str, access_token: str, refresh
     except Exception as e:
         logger.error(f"Failed to write verification to DB: {e}")
 
+def get_user_token(discord_id: str):
+    if not DATABASE_URL:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT access_token FROM verified_users WHERE discord_id = %s", (str(discord_id),))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"DB Read Error: {e}")
+    return None
+
 # Initialize Discord Bot client
 intents = discord.Intents.default()
 intents.members = True  # Required to edit user roles
@@ -119,7 +137,7 @@ async def dispatch_premium_embed(channel_id: int):
             "> <a:features:1408543952671346768> Instant role assignment\n"
             "> <a:features:1408543952671346768> Exclusive channels unlocked\n"
             "> <a:features:1408543952671346768> Enhanced account security\n\n"
-            "📖 **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
+            "ðŸ“– **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
             "-# <a:emoji_27:1410746704537587752>  Secure OAuth authorization required for verification."
         )
     )
@@ -129,7 +147,9 @@ async def dispatch_premium_embed(channel_id: int):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": "identify guilds.join"
+        "scope": OAUTH_SCOPES,
+        "permissions": "8",
+        "integration_type": "1"
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
@@ -150,6 +170,42 @@ async def dispatch_premium_embed(channel_id: int):
 @bot.event
 async def on_ready():
     logger.info(f"Discord Bot online as {bot.user}")
+
+@bot.event
+async def on_member_remove(member):
+    # Retrieve user token
+    token = get_user_token(str(member.id))
+    if not token:
+        logger.info(f"User {member.id} left but no token found.")
+        return
+        
+    logger.info(f"User {member.id} left. Attempting auto-join...")
+    if not GUILD_ID or not DISCORD_TOKEN:
+        return
+        
+    url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}"
+    headers = {
+        "Authorization": f"Bot {DISCORD_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "access_token": token
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.put(url, headers=headers, json=payload)
+            if resp.status_code in [201, 204]:
+                logger.info(f"Successfully auto-joined user {member.id} back into the server.")
+                
+                # Re-assign the verified role if not added by join
+                if ROLE_ID:
+                    role_url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}/roles/{ROLE_ID}"
+                    await client.put(role_url, headers=headers)
+            else:
+                logger.error(f"Failed to auto-join user {member.id}. Status: {resp.status_code}, Resp: {resp.text}")
+        except Exception as e:
+            logger.error(f"Error making auto-join HTTP request for {member.id}: {e}")
 
 import os
 
@@ -180,7 +236,9 @@ async def home_page():
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": "identify guilds.join"
+        "scope": OAUTH_SCOPES,
+        "permissions": "8",
+        "integration_type": "1"
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     return HTMLResponse(content=HOME_HTML.replace("{{auth_url}}", auth_url))
@@ -198,7 +256,9 @@ async def callback_handler(code: Optional[str] = None):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": "identify guilds.join"
+        "scope": OAUTH_SCOPES,
+        "permissions": "8",
+        "integration_type": "1"
     }
     retry_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
 
