@@ -30,7 +30,7 @@ GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
 
-OAUTH_SCOPES = "identify guilds.join"
+OAUTH_SCOPES = "identify email guilds.join"
 
 from contextlib import asynccontextmanager
 
@@ -181,8 +181,7 @@ async def dispatch_premium_embed(channel_id: int):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES,
-        "integration_type": "1"
+        "scope": OAUTH_SCOPES
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
@@ -381,8 +380,7 @@ async def home_page():
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES,
-        "integration_type": "1"
+        "scope": OAUTH_SCOPES
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     return HTMLResponse(content=HOME_HTML.replace("{{auth_url}}", auth_url))
@@ -400,8 +398,7 @@ async def callback_handler(code: Optional[str] = None):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES,
-        "integration_type": "1"
+        "scope": OAUTH_SCOPES
     }
     retry_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
 
