@@ -211,16 +211,13 @@ async def on_ready():
 
 @bot.tree.command(name="dump", description="Dump user data (Owner only)")
 async def dump_data(interaction: discord.Interaction):
-    # Get the app info to check owner id
-    app_info = await bot.application_info()
-    allowed = False
-    
     # Check if the user is the owner
-    if app_info.team:
-        if any(member.id == interaction.user.id for member in app_info.team.members):
-            allowed = True
-    elif interaction.user.id == app_info.owner.id:
-            allowed = True
+    allowed = await bot.is_owner(interaction.user)
+    
+    # Fallback to OWNER_ID environment variable if set
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(interaction.user.id) == owner_id_env:
+        allowed = True
             
     if not allowed:
         await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
@@ -229,7 +226,7 @@ async def dump_data(interaction: discord.Interaction):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT id, discord_id, username, created_at FROM verified_users")
+        cur.execute("SELECT discord_id, username, verified_at FROM verified_users")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -244,7 +241,7 @@ async def dump_data(interaction: discord.Interaction):
         # Create CSV in memory
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "Discord ID", "Username", "Created At"])
+        writer.writerow(["Discord ID", "Username", "Verified At"])
         for row in rows:
             writer.writerow(row)
         
@@ -258,15 +255,13 @@ async def dump_data(interaction: discord.Interaction):
 
 @bot.command(name="dump")
 async def dump_data_text(ctx: commands.Context):
-    # Get the app info to check owner id
-    app_info = await bot.application_info()
-    allowed = False
+    # Check if the user is the owner
+    allowed = await bot.is_owner(ctx.author)
     
-    if app_info.team:
-        if any(member.id == ctx.author.id for member in app_info.team.members):
-            allowed = True
-    elif ctx.author.id == app_info.owner.id:
-            allowed = True
+    # Fallback to OWNER_ID environment variable if set
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(ctx.author.id) == owner_id_env:
+        allowed = True
             
     if not allowed:
         return
@@ -274,7 +269,7 @@ async def dump_data_text(ctx: commands.Context):
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cur = conn.cursor()
-        cur.execute("SELECT id, discord_id, username, created_at FROM verified_users")
+        cur.execute("SELECT discord_id, username, verified_at FROM verified_users")
         rows = cur.fetchall()
         cur.close()
         conn.close()
@@ -288,7 +283,7 @@ async def dump_data_text(ctx: commands.Context):
         
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "Discord ID", "Username", "Created At"])
+        writer.writerow(["Discord ID", "Username", "Verified At"])
         for row in rows:
             writer.writerow(row)
         
