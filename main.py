@@ -102,6 +102,18 @@ def init_db2():
                 role_id VARCHAR(50) NOT NULL
             );
         """)
+        conn.commit()
+        try:
+            cur.execute("ALTER TABLE friend_guild_configs ADD COLUMN embed_title TEXT;")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        try:
+            cur.execute("ALTER TABLE friend_guild_configs ADD COLUMN embed_desc TEXT;")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
         cur.execute("""
             CREATE TABLE IF NOT EXISTS friend_verified_users (
                 discord_id VARCHAR(50),
@@ -176,21 +188,25 @@ def set_guild_role(guild_id: str, role_id: str):
     except Exception as e:
         logger.error(f"Error saving guild config: {e}")
 
-def get_friend_role(guild_id: str):
+def get_friend_config(guild_id: str):
     if not DATABASE_URL2:
-        return None
+        return None, None, None
     try:
         conn = psycopg2.connect(DATABASE_URL2)
         cur = conn.cursor()
-        cur.execute("SELECT role_id FROM friend_guild_configs WHERE guild_id = %s", (str(guild_id),))
+        cur.execute("SELECT role_id, embed_title, embed_desc FROM friend_guild_configs WHERE guild_id = %s", (str(guild_id),))
         row = cur.fetchone()
         cur.close()
         conn.close()
         if row:
-            return row[0]
+            return row[0], row[1], row[2]
     except Exception as e:
         logger.error(f"Error fetching friend guild config: {e}")
-    return None
+    return None, None, None
+
+def get_friend_role(guild_id: str):
+    role_id, _, _ = get_friend_config(guild_id)
+    return role_id
 
 def save_friend_verification(discord_id: str, guild_id: str, username: str, access_token: str, refresh_token: str):
     if not DATABASE_URL2:
@@ -291,19 +307,29 @@ async def dispatch_premium_embed(channel_id: int):
     if not channel:
         raise Exception("Channel not found on server or bot has no permission directly.")
 
+    guild_id = str(channel.guild.id)
+    
+    desc = (
+        "<:insane:1399760780009672734> **SM GrowMart HQ**\n\n"
+        "<a:emoji_421:1430254423971594451> Secure your access and unlock the complete server experience.\n\n"
+        "<a:emoji_38:1410748094420750406>  **Verified Members Receive**\n"
+        "> <a:features:1408543952671346768> Instant role assignment\n"
+        "> <a:features:1408543952671346768> Exclusive channels unlocked\n"
+        "> <a:features:1408543952671346768> Enhanced account security\n\n"
+        "📖 **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
+        "-# <a:emoji_27:1410746704537587752>  Secure OAuth authorization required for verification."
+    )
+
+    if guild_id != str(GUILD_ID):
+        # Fetch from custom configs
+        role_id, c_title, c_desc = get_friend_config(guild_id)
+        if c_title and c_desc:
+            desc = f"**{c_title}**\n\n{c_desc}\n\n📖 **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n-# <a:emoji_27:1410746704537587752>  Secure OAuth authorization required for verification."
+
     # Build beautiful premium interactive embed
     embed = discord.Embed(
         color=discord.Color.from_rgb(43, 45, 49), # Matches seamless Discord dark block background
-        description=(
-            "<:insane:1399760780009672734> **SM GrowMart HQ**\n\n"
-            "<a:emoji_421:1430254423971594451> Secure your access and unlock the complete server experience.\n\n"
-            "<a:emoji_38:1410748094420750406>  **Verified Members Receive**\n"
-            "> <a:features:1408543952671346768> Instant role assignment\n"
-            "> <a:features:1408543952671346768> Exclusive channels unlocked\n"
-            "> <a:features:1408543952671346768> Enhanced account security\n\n"
-            "📖 **Need Help?** [Read the Verification Guide Here](https://verify.digamber.in/guide)\n\n"
-            "-# <a:emoji_27:1410746704537587752>  Secure OAuth authorization required for verification."
-        )
+        description=desc
     )
     
     # Generate OAuth URL
@@ -650,6 +676,8 @@ class SetupConfig(BaseModel):
     guild_id: str
     channel_id: str
     role_id: str
+    embed_title: Optional[str] = None
+    embed_desc: Optional[str] = None
 
 async def verify_admin(token: str, target_guild_id: str) -> bool:
     # Just prefix with Bearer if not present
@@ -709,11 +737,15 @@ async def save_setup(data: SetupConfig, request: Request):
         try:
             conn = psycopg2.connect(DATABASE_URL2)
             cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO friend_guild_configs (guild_id, role_id)
-                VALUES (%s, %s)
-                ON CONFLICT (guild_id) DO UPDATE SET role_id = EXCLUDED.role_id;
-            """, (str(data.guild_id), str(data.role_id)))
+            query = """
+                INSERT INTO friend_guild_configs (guild_id, role_id, embed_title, embed_desc)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (guild_id) DO UPDATE SET 
+                role_id = EXCLUDED.role_id,
+                embed_title = EXCLUDED.embed_title,
+                embed_desc = EXCLUDED.embed_desc;
+            """
+            cur.execute(query, (str(data.guild_id), str(data.role_id), data.embed_title, data.embed_desc))
             conn.commit()
             cur.close()
             conn.close()
