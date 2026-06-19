@@ -825,6 +825,14 @@ async def callback_handler(code: Optional[str] = None, state: Optional[str] = No
                 setup_html = load_template("setup.html")
                 setup_html = setup_html.replace("{{access_token}}", access_token)
                 setup_html = setup_html.replace("{{client_id}}", str(CLIENT_ID))
+                bot_status = "Online" if bot.is_ready() else "Offline"
+                if bot_status == "Online":
+                    status_dot = '<span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span></span>'
+                else:
+                    status_dot = '<span class="relative flex h-2.5 w-2.5"><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span></span>'
+                
+                setup_html = setup_html.replace("{{bot_connection_status}}", f"{status_dot} {bot_status}")
+                setup_html = setup_html.replace("{{bot_server_count}}", str(len(bot.guilds)))
                 return HTMLResponse(setup_html)
 
             # 2. Get User Profile info database query matching
