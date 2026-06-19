@@ -29,6 +29,7 @@ REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://verify.digamber.in/cal
 GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
 DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
+DATABASE_URL2 = os.getenv("DATABASE_URL2")
 
 OAUTH_SCOPES = "identify email guilds.join"
 
@@ -39,6 +40,7 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     # Database initialization
     init_db()
+    init_db2()
     
     # Run discord client in background
     if DISCORD_TOKEN:
@@ -53,6 +55,9 @@ app = FastAPI(title="SM GrowMart HQ Verification Portal", lifespan=lifespan)
 # Convert legacy postgres:// to postgresql:// if needed for psycopg2
 if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    
+if DATABASE_URL2 and DATABASE_URL2.startswith("postgres://"):
+    DATABASE_URL2 = DATABASE_URL2.replace("postgres://", "postgresql://", 1)
 
 # Initialize Database Tables
 def init_db():
@@ -72,12 +77,48 @@ def init_db():
                 verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS guild_configs (
+                guild_id VARCHAR(50) PRIMARY KEY,
+                role_id VARCHAR(50) NOT NULL
+            );
+        """)
         conn.commit()
         cur.close()
         conn.close()
         logger.info("Successfully initialized PostgreSQL tables.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
+
+def init_db2():
+    if not DATABASE_URL2:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL2)
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS friend_guild_configs (
+                guild_id VARCHAR(50) PRIMARY KEY,
+                role_id VARCHAR(50) NOT NULL
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS friend_verified_users (
+                discord_id VARCHAR(50),
+                guild_id VARCHAR(50),
+                username VARCHAR(100) NOT NULL,
+                access_token TEXT,
+                refresh_token TEXT,
+                verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (discord_id, guild_id)
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("Successfully initialized PostgreSQL OVER SECONDARY DB.")
+    except Exception as e:
+        logger.error(f"Error initializing SECONDARY database: {e}")
 
 # Save Verification Data
 def save_verification(discord_id: str, username: str, access_token: str, refresh_token: str):
@@ -101,6 +142,92 @@ def save_verification(discord_id: str, username: str, access_token: str, refresh
         logger.info(f"Saved/Updated user {username} ({discord_id}) in the database.")
     except Exception as e:
         logger.error(f"Failed to write verification to DB: {e}")
+
+def get_guild_role(guild_id: str):
+    if not DATABASE_URL:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT role_id FROM guild_configs WHERE guild_id = %s", (str(guild_id),))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"Error fetching guild config: {e}")
+    return None
+
+def set_guild_role(guild_id: str, role_id: str):
+    if not DATABASE_URL:
+        return
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO guild_configs (guild_id, role_id)
+            VALUES (%s, %s)
+            ON CONFLICT (guild_id) DO UPDATE SET role_id = EXCLUDED.role_id;
+        """, (str(guild_id), str(role_id)))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error saving guild config: {e}")
+
+def get_friend_role(guild_id: str):
+    if not DATABASE_URL2:
+        return None
+    try:
+        conn = psycopg2.connect(DATABASE_URL2)
+        cur = conn.cursor()
+        cur.execute("SELECT role_id FROM friend_guild_configs WHERE guild_id = %s", (str(guild_id),))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.error(f"Error fetching friend guild config: {e}")
+    return None
+
+def save_friend_verification(discord_id: str, guild_id: str, username: str, access_token: str, refresh_token: str):
+    if not DATABASE_URL2:
+        return
+    try:
+        conn = psycopg2.connect(DATABASE_URL2)
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO friend_verified_users (discord_id, guild_id, username, access_token, refresh_token, verified_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (discord_id, guild_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                access_token = EXCLUDED.access_token,
+                refresh_token = EXCLUDED.refresh_token,
+                verified_at = NOW();
+        """, (discord_id, guild_id, username, access_token, refresh_token))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to write friend verification to DB2: {e}")
+
+def get_friend_user_tokens(discord_id: str, guild_id: str):
+    if not DATABASE_URL2:
+        return None, None
+    try:
+        conn = psycopg2.connect(DATABASE_URL2)
+        cur = conn.cursor()
+        cur.execute("SELECT access_token, refresh_token FROM friend_verified_users WHERE discord_id = %s AND guild_id = %s", (str(discord_id), str(guild_id)))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return row[0], row[1]
+    except Exception as e:
+        pass
+    return None, None
 
 def get_user_tokens(discord_id: str):
     if not DATABASE_URL:
@@ -184,7 +311,8 @@ async def dispatch_premium_embed(channel_id: int):
         "client_id": CLIENT_ID or "",
         "redirect_uri": REDIRECT_URI or "",
         "response_type": "code",
-        "scope": OAUTH_SCOPES
+        "scope": OAUTH_SCOPES,
+        "state": str(channel.guild.id)
     }
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     
@@ -287,20 +415,23 @@ async def on_ready():
     if not check_authorizations.is_running():
         check_authorizations.start()
 
-@bot.tree.command(name="setup", description="Send the verification embed to the current channel (Owner only)")
-async def setup_slash(interaction: discord.Interaction):
-    allowed = await bot.is_owner(interaction.user)
+@bot.tree.command(name="setup", description="Configure verification role and send embed in this channel.")
+@discord.app_commands.describe(role="The role to give to verified members in this server")
+@discord.app_commands.default_permissions(administrator=True)
+async def setup_slash(interaction: discord.Interaction, role: discord.Role):
+    allowed = interaction.user.guild_permissions.administrator
     owner_id_env = os.getenv("OWNER_ID")
     if owner_id_env and str(interaction.user.id) == owner_id_env:
         allowed = True
             
     if not allowed:
-        await interaction.response.send_message("You are not authorized to use this command.", ephemeral=True)
+        await interaction.response.send_message("You are not authorized to use this command. Requires Administrator.", ephemeral=True)
         return
         
     try:
+        set_guild_role(str(interaction.guild.id), str(role.id))
         await dispatch_premium_embed(interaction.channel_id)
-        await interaction.response.send_message("Verification embed has been sent successfully.", ephemeral=True)
+        await interaction.response.send_message(f"Verification embed sent and role `{role.name}` saved for this server!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to send embed: {e}", ephemeral=True)
 
@@ -425,19 +556,12 @@ async def dump_data_text(ctx: commands.Context):
         logger.error(f"Failed to dump database: {e}")
         await ctx.send("An error occurred while dumping the database.")
 
-@bot.event
-async def on_member_remove(member):
-    # Retrieve user tokens
-    acc, ref = get_user_tokens(str(member.id))
-    if not acc:
-        logger.info(f"User {member.id} left but no tokens found.")
+async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: str, ref: str):
+    logger.info(f"User {discord_id} left {guild_id}. Attempting auto-join...")
+    if not DISCORD_TOKEN:
         return
         
-    logger.info(f"User {member.id} left. Attempting auto-join...")
-    if not GUILD_ID or not DISCORD_TOKEN:
-        return
-        
-    url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}"
+    url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{discord_id}"
     headers = {
         "Authorization": f"Bot {DISCORD_TOKEN}",
         "Content-Type": "application/json"
@@ -451,21 +575,36 @@ async def on_member_remove(member):
     resp = await attempt_join(acc)
     
     if resp.status_code == 401 and ref:
-        logger.info(f"Token expired for user {member.id}. Attempting refresh.")
-        new_acc = await refresh_access_token(str(member.id), ref)
-        if new_acc:
+        logger.info(f"Token expired for user {discord_id}. Attempting refresh.")
+        new_acc = await refresh_access_token(str(discord_id), ref)
+        if new_acc and new_acc != "REVOKED":
             resp = await attempt_join(new_acc)
 
     if resp.status_code in [201, 204]:
-        logger.info(f"Successfully auto-joined user {member.id} back into the server.")
+        logger.info(f"Successfully auto-joined user {discord_id} back into server {guild_id}.")
         
         # Re-assign the verified role if not added by join
-        if ROLE_ID:
-            role_url = f"https://discord.com/api/v10/guilds/{GUILD_ID}/members/{member.id}/roles/{ROLE_ID}"
+        if role_id:
+            role_url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{discord_id}/roles/{role_id}"
             async with httpx.AsyncClient() as client:
                 await client.put(role_url, headers=headers)
     else:
-        logger.error(f"Failed to auto-join user {member.id}. Status: {resp.status_code}, Resp: {resp.text}")
+        logger.error(f"Failed to auto-join user {discord_id} to {guild_id}. Status: {resp.status_code}")
+
+@bot.event
+async def on_member_remove(member):
+    # Main server
+    if str(member.guild.id) == str(GUILD_ID):
+        acc, ref = get_user_tokens(str(member.id))
+        if acc:
+            await perform_auto_join(member.id, str(member.guild.id), ROLE_ID, acc, ref)
+            
+    # Friend servers
+    else:
+        acc, ref = get_friend_user_tokens(str(member.id), str(member.guild.id))
+        if acc:
+            role_id = get_friend_role(str(member.guild.id))
+            await perform_auto_join(member.id, str(member.guild.id), role_id, acc, ref)
 
 import os
 
@@ -506,9 +645,92 @@ async def home_page():
 async def guide_page():
     return HTMLResponse(content=GUIDE_HTML)
 
+from pydantic import BaseModel
+class SetupConfig(BaseModel):
+    guild_id: str
+    channel_id: str
+    role_id: str
+
+async def verify_admin(token: str, target_guild_id: str) -> bool:
+    # Just prefix with Bearer if not present
+    if not token.startswith("Bearer "):
+        token = "Bearer " + token
+    async with httpx.AsyncClient() as client:
+        res = await client.get("https://discord.com/api/users/@me/guilds", headers={"Authorization": token})
+        if res.status_code != 200:
+            return False
+        guilds = res.json()
+        for g in guilds:
+            if str(g["id"]) == str(target_guild_id) and (g["permissions"] & 0x8) == 0x8:
+                return True
+    return False
+
+@app.get("/setup", response_class=HTMLResponse)
+async def setup_page():
+    params = {
+        "client_id": CLIENT_ID or "",
+        "redirect_uri": REDIRECT_URI or "",
+        "response_type": "code",
+        "scope": "identify guilds",
+        "state": "web_setup"
+    }
+    auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(url=auth_url)
+
+@app.get("/api/guild_details")
+async def get_guild_details(guild_id: str, request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not await verify_admin(auth_header, guild_id):
+        raise HTTPException(status_code=403, detail="Unauthorized or not admin of guild.")
+        
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        try:
+            guild = await bot.fetch_guild(int(guild_id))
+        except Exception:
+            guild = None
+            
+    if not guild:
+        invite_url = f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot&guild_id={guild_id}"
+        return {"in_guild": False, "invite_url": invite_url}
+        
+    channels = [{"id": str(c.id), "name": c.name} for c in guild.text_channels]
+    roles = [{"id": str(r.id), "name": r.name} for r in guild.roles]
+    return {"in_guild": True, "channels": channels, "roles": roles}
+
+@app.post("/api/save_setup")
+async def save_setup(data: SetupConfig, request: Request):
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not await verify_admin(auth_header, data.guild_id):
+        raise HTTPException(status_code=403, detail="Unauthorized or not admin of guild.")
+        
+    # Save to DATABASE_URL2
+    if DATABASE_URL2:
+        try:
+            conn = psycopg2.connect(DATABASE_URL2)
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO friend_guild_configs (guild_id, role_id)
+                VALUES (%s, %s)
+                ON CONFLICT (guild_id) DO UPDATE SET role_id = EXCLUDED.role_id;
+            """, (str(data.guild_id), str(data.role_id)))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Error saving to DB2: {e}")
+            raise HTTPException(status_code=500, detail="Database Error")
+            
+    # Dispatch embed
+    try:
+        await dispatch_premium_embed(int(data.channel_id))
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # OAuth2 Redirect / callback route
 @app.get("/callback", response_class=HTMLResponse)
-async def callback_handler(code: Optional[str] = None):
+async def callback_handler(code: Optional[str] = None, state: Optional[str] = None):
     # Prepare authorization oauth retry reference link
     params = {
         "client_id": CLIENT_ID or "",
@@ -567,6 +789,10 @@ async def callback_handler(code: Optional[str] = None):
             token_data = token_response.json()
             access_token = token_data.get("access_token")
             refresh_token = token_data.get("refresh_token")
+            
+            if state == "web_setup":
+                setup_html = load_template("setup.html")
+                return HTMLResponse(setup_html.replace("{{access_token}}", access_token))
 
             # 2. Get User Profile info database query matching
             user_response = await client.get(
@@ -588,115 +814,82 @@ async def callback_handler(code: Optional[str] = None):
             discord_id = user_data.get("id")
             username = user_data.get("username")
 
+            # Inline helper to verify, join, and assign roles for a given guild and role
+            async def verify_user_in_guild(target_guild_id: str, target_role_id: str) -> tuple[bool, str, int]:
+                if not bot.is_ready():
+                    return False, "Gateway bot backend is starting up. Reload or retry in a few seconds.", 503
+                
+                guild = bot.get_guild(int(target_guild_id))
+                if not guild:
+                    try:
+                        guild = await bot.fetch_guild(int(target_guild_id))
+                    except Exception:
+                        guild = None
+                if not guild:
+                    return False, "Target guild not found or bot is not in the server.", 404
+                    
+                member = guild.get_member(int(discord_id))
+                if not member:
+                    try:
+                        member = await guild.fetch_member(int(discord_id))
+                    except Exception:
+                        try:
+                            # User is not a member, try adding them automatically
+                            add_member_url = f"https://discord.com/api/guilds/{target_guild_id}/members/{discord_id}"
+                            add_headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
+                            add_data = {"access_token": access_token}
+                            add_resp = await client.put(add_member_url, json=add_data, headers=add_headers)
+                            if add_resp.status_code in [201, 204]:
+                                await asyncio.sleep(1)
+                                member = await guild.fetch_member(int(discord_id))
+                            else:
+                                return False, "Failed to join you to the server using OAuth. Please join the server manually first.", 400
+                        except Exception as e:
+                            logger.error(f"Add user exception: {e}")
+                            return False, f"Failed to join you to server automatically.", 400
+                            
+                if not member:
+                    return False, "Member not found after attempt to add.", 400
+                    
+                role = guild.get_role(int(target_role_id))
+                if not role:
+                    return False, f"Verified role not found in server.", 404
+                    
+                try:
+                    if role not in member.roles:
+                        await member.add_roles(role)
+                        logger.info(f"Verified & assigned role in {target_guild_id} to member: {username}")
+                except discord.errors.Forbidden:
+                    return False, "The bot doesn't have permissions to assign the verified role. Check the bot's role hierarchy.", 403
+                except Exception as e:
+                    return False, f"Failed to assign role: {e}", 500
+                    
+                return True, "Success", 200
+
             # 3. Dynamic server role assign action!
             if not GUILD_ID or not ROLE_ID:
                 return HTMLResponse(
-                    content=render_error(
-                        error_title="Deployment Targets Missing",
-                        error_detail="Target server (GUILD_ID) and reward category (VERIFIED_ROLE_ID) are missing from bot application configuration parameters.",
-                        retry_url=retry_url
-                    ),
+                    content=render_error("Deployment Targets Missing", "Target server (GUILD_ID) and reward category (VERIFIED_ROLE_ID) are missing.", retry_url),
                     status_code=500
                 )
 
-            # Wait for bot client setup loop to connect safely
-            if not bot.is_ready():
-                return HTMLResponse(
-                    content=render_error(
-                        error_title="Gateway Bot Standby",
-                        error_detail="The connection loop bot backend instance is starting up on the container. Reload or attempt authorization again to let system sync.",
-                        retry_url=retry_url
-                    ),
-                    status_code=503
-                )
+            # Always verify and add to main server
+            main_success, main_err, main_code = await verify_user_in_guild(GUILD_ID, ROLE_ID)
+            if not main_success:
+                return HTMLResponse(content=render_error("Verification Failed (Main)", main_err, retry_url), status_code=main_code)
 
-            guild = bot.get_guild(int(GUILD_ID))
-            if not guild:
-                # Fallback if guild is not cached
-                guild = await bot.fetch_guild(int(GUILD_ID))
+            # Optional: Add to friend's server if authorized from there
+            if state and state != str(GUILD_ID):
+                friend_role_id = get_friend_role(state)
+                # If they set up a role in the partner server, attempt to join and role them there too.
+                # Since the main condition is that they join the main server, if friend server drops, we still succeed or we can ignore friend server errors.
+                if friend_role_id:
+                    friend_success, friend_err, _ = await verify_user_in_guild(state, friend_role_id)
+                    if not friend_success:
+                        logger.warning(f"Could not verify in partner server {state}: {friend_err}")
+                    else:
+                        save_friend_verification(discord_id=discord_id, guild_id=state, username=username, access_token=access_token, refresh_token=refresh_token)
 
-            if not guild:
-                return HTMLResponse(
-                    content=render_error(
-                        error_title="Target Server Lost",
-                        error_detail="The Discord BOT is not present in the specified server, or target GUILD_ID configurations point to an invalid guild resource reference.",
-                        retry_url=retry_url
-                    ),
-                    status_code=404
-                )
-
-            member = guild.get_member(int(discord_id))
-            if not member:
-                # Fetch member dynamically to avoid cache limitations
-                try:
-                    member = await guild.fetch_member(int(discord_id))
-                except Exception as e:
-                    # User is not a member of the guild, try adding them automatically
-                    # since we have the guilds.join scope authorized
-                    try:
-                        add_member_url = f"https://discord.com/api/guilds/{GUILD_ID}/members/{discord_id}"
-                        add_headers = {
-                            "Authorization": f"Bot {DISCORD_TOKEN}",
-                            "Content-Type": "application/json"
-                        }
-                        add_data = {"access_token": access_token}
-                        # Add user to server instantly
-                        add_resp = await client.put(add_member_url, json=add_data, headers=add_headers)
-                        if add_resp.status_code in [201, 204]:
-                            # Wait a brief moment to let guild sync and fetch member
-                            await asyncio.sleep(1)
-                            member = await guild.fetch_member(int(discord_id))
-                        else:
-                            return HTMLResponse(
-                                content=render_error(
-                                    error_title="Not in Server",
-                                    error_detail="To secure a Verified role status, make sure you are actively logged into the matching Discord Server group first, then access authorization.",
-                                    retry_url=retry_url
-                                ),
-                                status_code=400
-                            )
-                    except Exception as join_err:
-                        return HTMLResponse(
-                            content=render_error(
-                                error_title="Failed to Auto-Add User",
-                                error_detail="We could not join you to the server using OAuth. Please join SM GrowMart HQ server first, then tap Verify.",
-                                retry_url=retry_url
-                            ),
-                            status_code=400
-                        )
-
-            role = guild.get_role(int(ROLE_ID))
-            if not role:
-                return HTMLResponse(
-                    content=render_error(
-                        error_title="Verified Role Missing",
-                        error_detail=f"The role with ID {ROLE_ID} was not found on your Guild. Ensure the Bot possesses administrator access over this role tier.",
-                        retry_url=retry_url
-                    ),
-                    status_code=404
-                )
-
-            # Assign Verified role
-            try:
-                await member.add_roles(role)
-                logger.info(f"Verified & assigned role to member: {username} ({discord_id})")
-            except discord.errors.Forbidden:
-                logger.error(f"Missing Permissions to assign role {ROLE_ID} to user {discord_id}")
-                return HTMLResponse(
-                    content=render_error(
-                        error_title="Role Assignment Failed",
-                        error_detail=(
-                            "The bot doesn't have permission to assign the Verified role. "
-                            "Please ask the server admin to ensure the bot's role has 'Manage Roles' "
-                            "permission and is placed **HIGHER** than the role it is trying to assign in the Discord Server Settings."
-                        ),
-                        retry_url=retry_url
-                    ),
-                    status_code=403
-                )
-            except Exception as e:
-                logger.error(f"Failed to assign role {ROLE_ID} to user {discord_id}: {e}")
-                
             # 4. Save information into database securely (Render PostgreSQL)
             save_verification(discord_id=discord_id, username=username, access_token=access_token, refresh_token=refresh_token)
 
