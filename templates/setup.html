@@ -410,38 +410,49 @@
 
         async function fetchGuildInfo() {
             if (!activeGuildId) return;
-            const res = await fetch(`/api/guild_details?guild_id=${activeGuildId}`, {
-                headers: { "Authorization": "Bearer " + accessToken }
-            });
-            const data = await res.json();
-            
-            if (!res.ok) {
-                showMessage("Failed: " + (data.detail || "Unknown error"), false);
-                return;
-            }
-            
-            if (!data.in_guild) {
-                document.getElementById("bot-not-in-server").classList.remove("hidden");
-                document.getElementById("bot-not-in-server").style.display = "flex";
-                document.getElementById("invite-link").href = data.invite_url;
-            } else {
-                document.getElementById("bot-not-in-server").style.display = "none";
-                document.getElementById("bot-in-server").classList.remove("hidden");
-                document.getElementById("bot-in-server-footer").classList.remove("hidden");
-                
-                const cSelect = document.getElementById("channel-select");
-                cSelect.innerHTML = "";
-                data.channels.forEach(c => {
-                    cSelect.innerHTML += `<option value="${c.id}">#${c.name}</option>`;
+            try {
+                const res = await fetch(`/api/guild_details?guild_id=${activeGuildId}`, {
+                    headers: { "Authorization": "Bearer " + accessToken }
                 });
+                const data = await res.json();
                 
-                const rSelect = document.getElementById("role-select");
-                rSelect.innerHTML = "";
-                data.roles.forEach(r => {
-                    if(r.name !== "@everyone") {
-                        rSelect.innerHTML += `<option value="${r.id}">${r.name}</option>`;
+                if (!res.ok) {
+                    showMessage("Failed: " + (data.detail || "Unknown error"), false);
+                    return;
+                }
+                
+                if (!data.in_guild) {
+                    document.getElementById("bot-not-in-server").classList.remove("hidden");
+                    document.getElementById("bot-not-in-server").style.display = "flex";
+                    if (data.invite_url) {
+                        document.getElementById("invite-link").href = data.invite_url;
                     }
-                });
+                    if (data.detail) {
+                        showMessage(data.detail, false);
+                    }
+                } else {
+                    document.getElementById("bot-not-in-server").style.display = "none";
+                    document.getElementById("bot-not-in-server").classList.add("hidden");
+                    document.getElementById("bot-in-server").classList.remove("hidden");
+                    document.getElementById("bot-in-server-footer").classList.remove("hidden");
+                    
+                    const cSelect = document.getElementById("channel-select");
+                    cSelect.innerHTML = "";
+                    data.channels.forEach(c => {
+                        cSelect.innerHTML += `<option value="${c.id}">#${c.name}</option>`;
+                    });
+                    
+                    const rSelect = document.getElementById("role-select");
+                    rSelect.innerHTML = "";
+                    data.roles.forEach(r => {
+                        if(r.name !== "@everyone") {
+                            rSelect.innerHTML += `<option value="${r.id}">${r.name}</option>`;
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error(err);
+                showMessage("A network error occurred. See console.", false);
             }
         }
 
