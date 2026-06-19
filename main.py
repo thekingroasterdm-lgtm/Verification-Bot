@@ -619,18 +619,11 @@ async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: s
 
 @bot.event
 async def on_member_remove(member):
-    # Main server
+    # Auto-join them back ONLY to the Main server if they leave the Main server.
     if str(member.guild.id) == str(GUILD_ID):
         acc, ref = get_user_tokens(str(member.id))
         if acc:
             await perform_auto_join(member.id, str(member.guild.id), ROLE_ID, acc, ref)
-            
-    # Friend servers
-    else:
-        acc, ref = get_friend_user_tokens(str(member.id), str(member.guild.id))
-        if acc:
-            role_id = get_friend_role(str(member.guild.id))
-            await perform_auto_join(member.id, str(member.guild.id), role_id, acc, ref)
 
 import os
 
@@ -689,8 +682,13 @@ async def verify_admin(token: str, target_guild_id: str) -> bool:
             return False
         guilds = res.json()
         for g in guilds:
-            if str(g["id"]) == str(target_guild_id) and (g["permissions"] & 0x8) == 0x8:
-                return True
+            # Permissions can be string or int from discord api
+            try:
+                perms = int(g.get("permissions", 0))
+                if str(g["id"]) == str(target_guild_id) and (perms & 0x8) == 0x8:
+                    return True
+            except Exception:
+                pass
     return False
 
 @app.get("/setup", response_class=HTMLResponse)
@@ -824,7 +822,9 @@ async def callback_handler(code: Optional[str] = None, state: Optional[str] = No
             
             if state == "web_setup":
                 setup_html = load_template("setup.html")
-                return HTMLResponse(setup_html.replace("{{access_token}}", access_token))
+                setup_html = setup_html.replace("{{access_token}}", access_token)
+                setup_html = setup_html.replace("{{client_id}}", str(CLIENT_ID))
+                return HTMLResponse(setup_html)
 
             # 2. Get User Profile info database query matching
             user_response = await client.get(
