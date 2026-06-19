@@ -685,7 +685,8 @@ async def verify_admin(token: str, target_guild_id: str) -> bool:
             # Permissions can be string or int from discord api
             try:
                 perms = int(g.get("permissions", 0))
-                if str(g["id"]) == str(target_guild_id) and (perms & 0x8) == 0x8:
+                owner = g.get("owner", False)
+                if str(g["id"]) == str(target_guild_id) and (owner or (perms & 0x8) == 0x8):
                     return True
             except Exception:
                 pass
