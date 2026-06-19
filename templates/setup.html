@@ -37,8 +37,14 @@
                         </div>
                     </div>
                 </div>
-                <div class="text-sm font-medium text-slate-400">
-                    Partner Setup Dashboard
+                <div class="flex items-center gap-4">
+                    <div class="text-sm font-medium text-slate-400 hidden sm:block">
+                        Partner Setup Dashboard
+                    </div>
+                    <a href="https://discord.com/oauth2/authorize?client_id={{client_id}}&permissions=8&scope=bot" target="_blank" class="bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 font-medium py-1.5 px-4 rounded-lg transition duration-200 flex items-center gap-2 text-sm border border-indigo-500/30">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Invite Bot
+                    </a>
                 </div>
             </div>
         </div>
@@ -205,7 +211,13 @@
                 const container = document.getElementById("server-list");
                 
                 // Filter for Administrator (0x8)
-                const adminGuilds = guilds.filter(g => (g.permissions & 0x8) === 0x8);
+                const adminGuilds = guilds.filter(g => {
+                    try {
+                        return (BigInt(g.permissions) & 8n) === 8n;
+                    } catch(e) {
+                        return false;
+                    }
+                });
                 
                 if (adminGuilds.length === 0) {
                     const loadingEl = document.getElementById("loading");
