@@ -721,9 +721,23 @@ async def get_guild_details(guild_id: str, request: Request):
         invite_url = f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot&guild_id={guild_id}"
         return {"in_guild": False, "invite_url": invite_url}
         
-    channels = [{"id": str(c.id), "name": c.name} for c in guild.text_channels]
-    roles = [{"id": str(r.id), "name": r.name} for r in guild.roles]
-    return {"in_guild": True, "channels": channels, "roles": roles}
+    try:
+        # If cache is missing, fetch the roles and channels manually
+        channels_list = guild.text_channels
+        if not channels_list:
+            fetched_channels = await guild.fetch_channels()
+            import discord
+            channels_list = [c for c in fetched_channels if isinstance(c, discord.TextChannel)]
+            
+        roles_list = guild.roles
+        if len(roles_list) <= 1:
+            roles_list = await guild.fetch_roles()
+            
+        channels = [{"id": str(c.id), "name": c.name} for c in channels_list]
+        roles = [{"id": str(r.id), "name": r.name} for r in roles_list]
+        return {"in_guild": True, "channels": channels, "roles": roles}
+    except Exception as e:
+        return {"in_guild": False, "detail": "Bot lacks permissions. Please kick and re-invite."}
 
 @app.post("/api/save_setup")
 async def save_setup(data: SetupConfig, request: Request):
