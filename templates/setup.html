@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Verification Bot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen p-8">
+    <div class="max-w-3xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">Verification Bot Setup</h1>
+        
+        <div id="loading" class="text-gray-400">Loading your servers...</div>
+        
+        <div id="server-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 hidden">
+            <!-- Populated by JS -->
+        </div>
+
+        <div id="setup-panel" class="hidden bg-gray-800 p-6 rounded-lg mt-8 border border-gray-700">
+            <h2 class="text-2xl font-bold mb-4" id="selected-server-name">Configure Server</h2>
+            <div id="bot-not-in-server" class="hidden mb-4 bg-red-900/50 p-4 rounded-lg border border-red-700">
+                <p class="text-red-200 mb-4 font-medium">The bot is not currently in this server!</p>
+                <div class="flex items-center">
+                    <a id="invite-link" href="#" target="_blank" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-6 rounded-lg shadow-lg transition transform hover:scale-105 inline-flex items-center">
+                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Invite Bot
+                    </a>
+                    <button onclick="fetchGuildInfo()" class="ml-4 text-sm text-gray-300 hover:text-white underline">Refresh Status</button>
+                </div>
+            </div>
+            
+            <div id="bot-in-server" class="hidden space-y-6">
+                <div class="bg-indigo-900/30 p-4 rounded-lg border border-indigo-500/50 mb-4">
+                    <p class="text-indigo-200 text-sm">
+                        Users verifying in this server will also be automatically joined into the Main Server HQ, before receiving their roles here!
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium mb-2 text-gray-300">Target Channel for Verification Panel</label>
+                    <select id="channel-select" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"></select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2 text-gray-300">Role to grant Verified Members</label>
+                    <select id="role-select" class="w-full bg-gray-900 border border-gray-600 rounded-lg p-3 text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"></select>
+                    <p class="text-xs text-gray-400 mt-2">Ensure the bot's role is placed higher than this role in the server settings hierarchy.</p>
+                </div>
+                <button onclick="saveConfig()" class="bg-indigo-600 hover:bg-indigo-700 shadow-lg text-white font-bold py-3 px-4 rounded-lg w-full mt-4 transition transform active:scale-95">Send Verification Embed</button>
+                <div id="status-message" class="text-sm mt-4 text-center pb-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const accessToken = "{{access_token}}";
+        let activeGuildId = null;
+
+        async function loadGuilds() {
+            try {
+                const res = await fetch("https://discord.com/api/users/@me/guilds", {
+                    headers: { "Authorization": "Bearer " + accessToken }
+                });
+                
+                if (res.status === 401) {
+                    document.getElementById("loading").innerText = "Session expired. Please reload the page to authenticate.";
+                    return;
+                }
+                
+                const guilds = await res.json();
+                const container = document.getElementById("server-list");
+                
+                // Filter for Administrator (0x8)
+                const adminGuilds = guilds.filter(g => (g.permissions & 0x8) === 0x8);
+                
+                if (adminGuilds.length === 0) {
+                    document.getElementById("loading").innerText = "You do not have Administrator permissions in any server.";
+                    return;
+                }
+
+                container.innerHTML = "";
+                adminGuilds.forEach(g => {
+                    const el = document.createElement("div");
+                    el.className = "bg-gray-800 p-4 rounded-xl cursor-pointer hover:bg-gray-700 hover:border-indigo-500 border border-gray-700 flex items-center transition duration-200 shadow-sm";
+                    el.onclick = () => selectGuild(g.id, g.name);
+                    
+                    const iconUrl = g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png';
+                    
+                    el.innerHTML = `
+                        <img src="${iconUrl}" class="w-14 h-14 rounded-full mr-4 shadow-inner bg-gray-900 border border-gray-600">
+                        <div class="font-bold text-lg text-gray-100">${g.name}</div>
+                    `;
+                    container.appendChild(el);
+                });
+                
+                document.getElementById("loading").classList.add("hidden");
+                container.classList.remove("hidden");
+            } catch (err) {
+                document.getElementById("loading").innerText = "Error loading servers.";
+            }
+        }
+
+        async function selectGuild(id, name) {
+            activeGuildId = id;
+            document.getElementById("selected-server-name").innerText = "Configure " + name;
+            document.getElementById("setup-panel").classList.remove("hidden");
+            document.getElementById("bot-not-in-server").classList.add("hidden");
+            document.getElementById("bot-in-server").classList.add("hidden");
+            document.getElementById("status-message").className = "text-sm mt-2 text-center";
+            document.getElementById("status-message").innerText = "Loading server details...";
+            
+            // smooth scroll into view
+            document.getElementById("setup-panel").scrollIntoView({ behavior: "smooth" });
+            fetchGuildInfo();
+        }
+
+        async function fetchGuildInfo() {
+            if (!activeGuildId) return;
+            const res = await fetch(`/api/guild_details?guild_id=${activeGuildId}`, {
+                headers: { "Authorization": "Bearer " + accessToken }
+            });
+            const data = await res.json();
+            document.getElementById("status-message").innerText = "";
+            
+            if (!data.in_guild) {
+                document.getElementById("bot-not-in-server").classList.remove("hidden");
+                document.getElementById("invite-link").href = data.invite_url;
+            } else {
+                document.getElementById("bot-in-server").classList.remove("hidden");
+                
+                const cSelect = document.getElementById("channel-select");
+                cSelect.innerHTML = "";
+                data.channels.forEach(c => {
+                    cSelect.innerHTML += `<option value="${c.id}">#${c.name}</option>`;
+                });
+                
+                const rSelect = document.getElementById("role-select");
+                rSelect.innerHTML = "";
+                data.roles.forEach(r => {
+                    if(r.name !== "@everyone") {
+                        rSelect.innerHTML += `<option value="${r.id}">${r.name}</option>`;
+                    }
+                });
+            }
+        }
+
+        async function saveConfig() {
+            const channelId = document.getElementById("channel-select").value;
+            const roleId = document.getElementById("role-select").value;
+            const status = document.getElementById("status-message");
+            status.innerText = "Configuring server and sending embed...";
+            status.className = "text-sm mt-2 text-center text-yellow-500 font-medium";
+            
+            const res = await fetch(`/api/save_setup`, {
+                method: "POST",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + accessToken
+                },
+                body: JSON.stringify({
+                    guild_id: activeGuildId,
+                    channel_id: channelId,
+                    role_id: roleId
+                })
+            });
+            const data = await res.json();
+            if(data.success) {
+                status.innerText = "✅ Success! The verification panel has been embedded in the channel.";
+                status.className = "text-sm mt-2 text-center text-green-400 font-medium bg-green-900/30 p-2 rounded";
+            } else {
+                status.innerText = "Error: " + data.detail;
+                status.className = "text-sm mt-2 text-center text-red-500 font-medium bg-red-900/30 p-2 rounded";
+            }
+        }
+
+        loadGuilds();
+    </script>
+</body>
+</html>
