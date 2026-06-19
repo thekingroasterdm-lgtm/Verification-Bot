@@ -816,46 +816,62 @@ async def setup_page():
     auth_url = f"https://discord.com/oauth2/authorize?{urllib.parse.urlencode(params)}"
     return RedirectResponse(url=auth_url)
 
+def log_debug(msg):
+    try:
+        with open("guild_debug.log", "a") as f:
+            import datetime
+            f.write(f"[{datetime.datetime.now()}] {msg}\n")
+    except:
+        pass
+
 @app.get("/api/guild_details")
 async def get_guild_details(guild_id: str, request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header or not await verify_admin(auth_header, guild_id):
         raise HTTPException(status_code=403, detail="Unauthorized or not admin of guild.")
         
-    print(f"DEBUG: get_guild_details called for {guild_id}")
+    log_debug(f"get_guild_details called for {guild_id}")
     guild = bot.get_guild(int(guild_id))
-    print(f"DEBUG: bot.get_guild({guild_id}) returned: {guild}")
+    log_debug(f"bot.get_guild({guild_id}) returned: {guild}")
+    fetch_err = "Not in cache."
     if not guild:
         try:
             guild = await bot.fetch_guild(int(guild_id))
-            print(f"DEBUG: bot.fetch_guild({guild_id}) returned: {guild}")
+            log_debug(f"bot.fetch_guild({guild_id}) returned: {guild}")
         except Exception as e:
-            print(f"DEBUG: bot.fetch_guild({guild_id}) raised: {e}")
+            log_debug(f"bot.fetch_guild({guild_id}) raised: {e}")
+            fetch_err = str(e)
             guild = None
             
     if not guild:
-        invite_url = f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot&guild_id={guild_id}"
-        return {"in_guild": False, "invite_url": invite_url}
+        invite_url = f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id={guild_id}"
+        return {"in_guild": False, "invite_url": invite_url, "detail": f"Server not found. Reason: {fetch_err}"}
         
     try:
-        # If cache is missing, fetch the roles and channels manually
+        # Try to use cached channels, fallback to fetch
         channels_list = guild.text_channels
         if not channels_list:
-            fetched_channels = await guild.fetch_channels()
-            import discord
-            channels_list = [c for c in fetched_channels if isinstance(c, discord.TextChannel)]
-            
+            try:
+                fetched_channels = await guild.fetch_channels()
+                import discord
+                channels_list = [c for c in fetched_channels if isinstance(c, discord.TextChannel)]
+            except Exception:
+                pass
+                
         roles_list = guild.roles
-        if len(roles_list) <= 1:
-            roles_list = await guild.fetch_roles()
-            
+        if not roles_list or len(roles_list) <= 1:
+            try:
+                roles_list = await guild.fetch_roles()
+            except Exception:
+                pass
+                
         channels = [{"id": str(c.id), "name": c.name} for c in channels_list]
         roles = [{"id": str(r.id), "name": r.name} for r in roles_list]
         return {"in_guild": True, "channels": channels, "roles": roles}
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return {"in_guild": False, "detail": f"Bot lacks permissions or error: {str(e)}"}
+        return {"in_guild": True, "channels": [], "roles": [], "detail": f"Partial error: {str(e)}"}
 
 @app.post("/api/save_setup")
 async def save_setup(data: SetupConfig, request: Request):
