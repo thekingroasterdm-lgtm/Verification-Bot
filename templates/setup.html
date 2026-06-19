@@ -54,7 +54,7 @@
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
             <!-- Left Column: Server List -->
-            <div class="lg:col-span-5 flex flex-col h-[calc(100vh-140px)]">
+            <div id="left-column" class="lg:col-span-5 flex flex-col h-[calc(100vh-140px)]">
                 <div class="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 flex-grow flex flex-col shadow-xl">
                     <div class="mb-5">
                         <h2 class="text-lg font-semibold text-white flex items-center gap-2">
@@ -79,7 +79,7 @@
             </div>
 
             <!-- Right Column: Setup Form -->
-            <div class="lg:col-span-7">
+            <div id="right-column" class="lg:col-span-7 hidden lg:block">
                 <div id="empty-state" class="bg-slate-800/20 border border-slate-700/30 border-dashed rounded-2xl h-full min-h-[400px] flex flex-col items-center justify-center text-slate-500 text-center p-8">
                     <svg class="w-16 h-16 mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                     <p class="text-lg font-medium text-slate-400">No Server Selected</p>
@@ -94,6 +94,9 @@
                         <div class="flex items-center justify-between mb-6 pb-6 border-b border-slate-700/50">
                             <div>
                                 <h2 class="text-2xl font-bold text-white flex items-center gap-3">
+                                    <button onclick="backToServerList()" class="lg:hidden bg-slate-700/50 hover:bg-slate-700 text-slate-300 p-2 rounded-lg flex items-center justify-center transition mr-1">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                    </button>
                                     <span id="selected-server-name">Configure Server</span>
                                 </h2>
                                 <p class="text-sm text-slate-400 mt-1">Configure your embed and auto-role settings.</p>
@@ -258,6 +261,13 @@
             }
         }
 
+        function backToServerList() {
+            activeGuildId = null;
+            document.getElementById("left-column").classList.remove("hidden");
+            document.getElementById("right-column").classList.add("hidden");
+            document.getElementById("right-column").classList.add("lg:block"); // Maintain flex on desktop
+        }
+
         async function selectGuild(id, name) {
             activeGuildId = id;
             document.getElementById("selected-server-name").innerText = name;
@@ -270,6 +280,12 @@
             
             const status = document.getElementById("status-message");
             status.style.opacity = 0;
+            
+            // On mobile, hide the left column and show the right column
+            if (window.innerWidth < 1024) {
+                document.getElementById("left-column").classList.add("hidden");
+                document.getElementById("right-column").classList.remove("hidden");
+            }
             
             fetchGuildInfo();
         }
