@@ -99,8 +99,15 @@
                 </div>
                 
                 <div class="flex items-center gap-4">
-                    <div class="text-sm font-medium text-zinc-400 hidden sm:block px-3 py-1 bg-white/5 rounded-full border border-white/10">
-                        Admin Dashboard
+                    <div class="text-sm font-medium text-zinc-400 hidden sm:flex items-center gap-3 px-3 py-1.5 bg-white/5 rounded-full border border-white/10">
+                        <div class="flex items-center gap-1.5">
+                            {{bot_connection_status}}
+                        </div>
+                        <div class="w-px h-3 bg-white/20"></div>
+                        <div class="flex items-center gap-1.5" title="Servers Installed">
+                            <svg class="w-4 h-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                            {{bot_server_count}} Servers
+                        </div>
                     </div>
                     <a href="https://discord.com/oauth2/authorize?client_id={{client_id}}&permissions=8&scope=bot" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 px-4 rounded-lg transition duration-200 flex items-center gap-2 text-sm shadow-lg shadow-indigo-600/20">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
