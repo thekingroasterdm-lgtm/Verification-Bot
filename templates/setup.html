@@ -3,45 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard | Setup Verification Bot</title>
+    <title>VerificationHQ Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #09090b; /* Zinc 950 */
+            color: #fafafa; /* Zinc 50 */
+        }
+
+        .glass-panel {
+            background: rgba(24, 24, 27, 0.7); /* Zinc 900 with opacity */
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .glass-navbar {
+            background: rgba(9, 9, 11, 0.8);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
         .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
+            width: 6px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
-            background: #1f2937;
-            border-radius: 4px;
+            background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #4b5563;
-            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #6b7280;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .input-field {
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            transition: all 0.2s ease-in-out;
+        }
+        .input-field:focus {
+            border-color: #6366f1; /* Indigo 500 */
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+            outline: none;
+            background: rgba(0, 0, 0, 0.6);
+        }
+
+        .server-item {
+            transition: all 0.2s ease-in-out;
+            border: 1px solid transparent;
+        }
+        .server-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        .server-item.active {
+            background: rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.5);
+        }
+        
+        /* Mobile Layout Handling */
+        @media (max-width: 1023px) {
+            .mobile-hidden {
+                display: none !important;
+            }
+            .mobile-active {
+                display: flex !important;
+            }
         }
     </style>
 </head>
-<body class="bg-[#0f172a] text-slate-200 min-h-screen font-sans selection:bg-indigo-500/30">
+<body class="selection:bg-indigo-500/30 overflow-x-hidden min-h-screen flex flex-col">
+    <!-- Ambient Background Lighting -->
+    <div class="fixed inset-0 z-[-1] pointer-events-none w-full h-full overflow-hidden">
+        <div class="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-indigo-600/10 blur-[120px]"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/10 blur-[100px]"></div>
+    </div>
+
     <!-- Navbar -->
-    <nav class="border-b border-slate-800 bg-[#0f172a]/80 backdrop-blur-md sticky top-0 z-50">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav class="glass-navbar sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <div class="flex-shrink-0">
-                        <div class="flex items-center gap-2">
-                            <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.5)]">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                            </div>
-                            <span class="font-bold text-xl tracking-tight text-white">VerificationHQ</span>
-                        </div>
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-white shadow-[0_0_20px_rgba(99,102,241,0.4)]">
+                        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
                     </div>
+                    <span class="font-bold text-xl tracking-tight text-zinc-100">VerificationHQ</span>
                 </div>
+                
                 <div class="flex items-center gap-4">
-                    <div class="text-sm font-medium text-slate-400 hidden sm:block">
-                        Partner Setup Dashboard
+                    <div class="text-sm font-medium text-zinc-400 hidden sm:block px-3 py-1 bg-white/5 rounded-full border border-white/10">
+                        Admin Dashboard
                     </div>
-                    <a href="https://discord.com/oauth2/authorize?client_id={{client_id}}&permissions=8&scope=bot" target="_blank" class="bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 font-medium py-1.5 px-4 rounded-lg transition duration-200 flex items-center gap-2 text-sm border border-indigo-500/30">
+                    <a href="https://discord.com/oauth2/authorize?client_id={{client_id}}&permissions=8&scope=bot" target="_blank" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium py-1.5 px-4 rounded-lg transition duration-200 flex items-center gap-2 text-sm shadow-lg shadow-indigo-600/20">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                         Invite Bot
                     </a>
@@ -50,143 +111,162 @@
         </div>
     </nav>
 
-    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full h-[calc(100vh-64px)] flex flex-col">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full pb-8">
             
             <!-- Left Column: Server List -->
-            <div id="left-column" class="lg:col-span-5 flex flex-col h-[calc(100vh-140px)]">
-                <div class="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 flex-grow flex flex-col shadow-xl">
-                    <div class="mb-5">
-                        <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                            Select Your Server
-                        </h2>
-                        <p class="text-sm text-slate-400 mt-1">Choose a server where you have Administrator permissions to configure the bot.</p>
-                    </div>
+            <div id="left-column" class="lg:col-span-4 xl:col-span-3 flex flex-col h-full glass-panel rounded-2xl overflow-hidden shadow-2xl">
+                <div class="p-5 border-b border-white/5 bg-white/[0.02]">
+                    <h2 class="text-base font-semibold text-zinc-100 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        Your Servers
+                    </h2>
+                    <p class="text-xs text-zinc-400 mt-1.5 leading-relaxed">Select a server to configure verification roles and embeds.</p>
+                </div>
 
-                    <div id="loading" class="flex-grow flex flex-col items-center justify-center text-slate-400">
-                        <svg class="animate-spin h-8 w-8 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Loading your servers...</span>
-                    </div>
+                <div id="loading" class="flex-grow flex flex-col items-center justify-center text-zinc-400 p-6">
+                    <svg class="animate-spin h-8 w-8 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-sm font-medium">Loading servers...</span>
+                </div>
 
-                    <div id="server-list" class="flex-grow overflow-y-auto custom-scrollbar pr-2 space-y-3 hidden">
-                        <!-- Populated by JS -->
-                    </div>
+                <div id="server-list" class="flex-grow overflow-y-auto custom-scrollbar p-3 space-y-2 hidden">
+                    <!-- Populated by JS -->
                 </div>
             </div>
 
             <!-- Right Column: Setup Form -->
-            <div id="right-column" class="lg:col-span-7 hidden lg:block">
-                <div id="empty-state" class="bg-slate-800/20 border border-slate-700/30 border-dashed rounded-2xl h-full min-h-[400px] flex flex-col items-center justify-center text-slate-500 text-center p-8">
-                    <svg class="w-16 h-16 mb-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                    <p class="text-lg font-medium text-slate-400">No Server Selected</p>
-                    <p class="text-sm mt-2 max-w-sm">Select a server from the list on the left to configure verification settings, messages, and roles.</p>
+            <div id="right-column" class="lg:col-span-8 xl:col-span-9 h-full flex flex-col mobile-hidden">
+                
+                <!-- Empty State -->
+                <div id="empty-state" class="glass-panel border border-white/5 rounded-2xl h-full flex flex-col items-center justify-center text-zinc-500 text-center p-8 shadow-2xl relative overflow-hidden group">
+                    <div class="absolute inset-0 bg-gradient-to-t from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition duration-700 pointer-events-none"></div>
+                    <div class="w-20 h-20 bg-zinc-900 border border-white/10 rounded-2xl flex items-center justify-center mb-6 shadow-xl relative z-10">
+                        <svg class="w-8 h-8 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
+                    </div>
+                    <p class="text-xl font-semibold text-zinc-300 relative z-10">No Server Selected</p>
+                    <p class="text-sm mt-3 max-w-sm text-zinc-500 leading-relaxed relative z-10">Choose a server from the sidebar to customize the verification panel, assign roles, and safeguard your community.</p>
                 </div>
 
+                <!-- Setup Panel -->
                 <div id="setup-panel" class="hidden h-full flex flex-col">
-                    <div class="bg-slate-800 border border-slate-700 rounded-2xl p-6 shadow-xl relative overflow-hidden flex-grow">
-                        <!-- Decorative top glow -->
-                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500"></div>
+                    <div class="glass-panel border border-white/10 rounded-2xl p-6 md:p-8 shadow-2xl relative overflow-hidden flex-grow flex flex-col">
+                        <!-- Top Accent Line -->
+                        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 opacity-80"></div>
                         
-                        <div class="flex items-center justify-between mb-6 pb-6 border-b border-slate-700/50">
+                        <!-- Header -->
+                        <div class="flex items-start md:items-center justify-between mb-8 pb-6 border-b border-white/5 flex-col md:flex-row gap-4">
                             <div>
                                 <h2 class="text-2xl font-bold text-white flex items-center gap-3">
-                                    <button onclick="backToServerList()" class="lg:hidden bg-slate-700/50 hover:bg-slate-700 text-slate-300 p-2 rounded-lg flex items-center justify-center transition mr-1">
+                                    <button onclick="backToServerList()" class="lg:hidden bg-white/5 hover:bg-white/10 text-zinc-300 p-2 rounded-xl flex items-center justify-center transition border border-white/10">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                                     </button>
-                                    <span id="selected-server-name">Configure Server</span>
+                                    <span id="selected-server-name" class="tracking-tight">Server Config</span>
                                 </h2>
-                                <p class="text-sm text-slate-400 mt-1">Configure your embed and auto-role settings.</p>
+                                <p class="text-sm text-zinc-400 mt-2 pl-[3.25rem] lg:pl-0">Configure your automated verification system.</p>
                             </div>
                         </div>
 
-                        <!-- Not in server state -->
-                        <div id="bot-not-in-server" class="hidden">
-                            <div class="bg-rose-500/10 border border-rose-500/20 rounded-xl p-6 text-center">
-                                <div class="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <svg class="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                </div>
-                                <h3 class="text-lg font-semibold text-rose-200 mb-2">Bot Not Present</h3>
-                                <p class="text-rose-200/70 mb-6 text-sm">The bot must be invited to this server before you can configure the verification panel.</p>
-                                
-                                <div class="flex items-center justify-center gap-4">
-                                    <a id="invite-link" href="#" target="_blank" class="bg-white text-slate-900 hover:bg-slate-100 font-semibold py-2.5 px-6 rounded-lg transition duration-200 shadow-md flex items-center gap-2">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
-                                        Invite Bot
-                                    </a>
-                                    <button onclick="fetchGuildInfo()" class="bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 hover:text-indigo-200 font-medium py-2.5 px-6 rounded-lg transition duration-200 flex items-center gap-2">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                                        I've Invited It
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- In server state (Main Form) -->
-                        <div id="bot-in-server" class="hidden space-y-6">
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-300 mb-2">Target Channel</label>
-                                    <div class="relative">
-                                        <select id="channel-select" class="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-shadow"></select>
-                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <svg class="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
-                                        </div>
-                                        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-4 h-4"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                        </div>
+                        <!-- Content Area (Scrollable if needed) -->
+                        <div class="flex-grow overflow-y-auto custom-scrollbar pr-2 lg:pr-4 pb-4">
+                            <!-- Bot Not In Server -->
+                            <div id="bot-not-in-server" class="hidden h-full flex flex-col items-center justify-center">
+                                <div class="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-8 max-w-md text-center shadow-lg relative overflow-hidden">
+                                    <div class="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 blur-[50px] rounded-full pointer-events-none"></div>
+                                    <div class="w-16 h-16 bg-gradient-to-br from-rose-500/20 to-red-600/20 border border-rose-500/30 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                                        <svg class="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                     </div>
-                                    <p class="text-xs text-slate-500 mt-2">The channel where the verification button will be sent.</p>
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-medium text-slate-300 mb-2">Verified Role</label>
-                                    <div class="relative">
-                                        <select id="role-select" class="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl pl-10 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none transition-shadow"></select>
-                                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <svg class="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-                                        </div>
-                                        <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="w-4 h-4"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-                                        </div>
-                                    </div>
-                                    <p class="text-xs text-slate-500 mt-2">Ensure the Bot's role is placed above this role.</p>
-                                </div>
-                            </div>
-                            
-                            <hr class="border-slate-700/50">
-
-                            <!-- Verification Message Settings -->
-                            <div>
-                                <h3 class="text-lg font-medium text-white mb-4">Embed Customization</h3>
-                                
-                                <div class="space-y-4">
-                                    <div>
-                                        <label class="block text-sm font-medium text-slate-300 mb-2">Embed Title</label>
-                                        <input type="text" id="embed-title" placeholder="e.g. Verify Your Identity" class="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow">
-                                    </div>
+                                    <h3 class="text-xl font-bold text-rose-100 mb-3 tracking-wide">Bot Access Required</h3>
+                                    <p class="text-rose-200/70 mb-8 text-sm leading-relaxed">The bot has detected that it is not a member of this server. Please invite it before proceeding.</p>
                                     
-                                    <div>
-                                        <label class="block text-sm font-medium text-slate-300 mb-2">Embed Description</label>
-                                        <textarea id="embed-desc" rows="4" placeholder="e.g. Click the button below to verify your account and gain access to the server. By verifying, you agree to our rules." class="w-full bg-slate-900/50 border border-slate-700 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow custom-scrollbar"></textarea>
-                                        <p class="text-xs text-slate-500 mt-2">Supports basic Discord formatting like **bold** and *italics*.</p>
+                                    <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
+                                        <a id="invite-link" href="#" target="_blank" class="w-full sm:w-auto bg-white text-zinc-900 hover:bg-zinc-100 font-semibold py-2.5 px-6 rounded-xl transition duration-200 shadow-md flex items-center justify-center gap-2">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                                            Invite Bot
+                                        </a>
+                                        <button onclick="fetchGuildInfo()" class="w-full sm:w-auto bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 hover:border-zinc-600 font-medium py-2.5 px-6 rounded-xl transition duration-200 flex items-center justify-center gap-2">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                            Refresh
+                                        </button>
                                     </div>
                                 </div>
                             </div>
+                            
+                            <!-- Main Form -->
+                            <div id="bot-in-server" class="hidden space-y-8">
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-medium text-zinc-300">Target Channel</label>
+                                        <div class="relative">
+                                            <select id="channel-select" class="input-field w-full rounded-xl pl-10 pr-10 py-3.5 appearance-none text-sm font-medium cursor-pointer shadow-inner"></select>
+                                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                                <svg class="h-4 w-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"></path></svg>
+                                            </div>
+                                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-zinc-400">
+                                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                            </div>
+                                        </div>
+                                        <p class="text-xs text-zinc-500 pl-1">Where the verification panel will be posted.</p>
+                                    </div>
 
-                            <div class="pt-4 flex items-center justify-between">
-                                <span class="text-xs text-indigo-400 flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Network synced verification</span>
-                                <button onclick="saveConfig()" class="bg-indigo-500 hover:bg-indigo-600 text-white font-medium py-3 px-8 rounded-xl shadow-[0_0_15px_rgba(99,102,241,0.3)] hover:shadow-[0_0_20px_rgba(99,102,241,0.5)] transition duration-200 flex items-center gap-2">
-                                    Send Verification Embed
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                    <div class="space-y-2">
+                                        <label class="block text-sm font-medium text-zinc-300">Verified Role</label>
+                                        <div class="relative">
+                                            <select id="role-select" class="input-field w-full rounded-xl pl-10 pr-10 py-3.5 appearance-none text-sm font-medium cursor-pointer shadow-inner"></select>
+                                            <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                                <svg class="h-4 w-4 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
+                                            </div>
+                                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none text-zinc-400">
+                                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" class="w-3.5 h-3.5"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                                            </div>
+                                        </div>
+                                        <p class="text-xs text-zinc-500 pl-1"><span class="text-indigo-400">Important:</span> Place the Bot's role above this in server settings.</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="w-full h-px bg-white/[0.05]"></div>
+
+                                <!-- Embed Settings -->
+                                <div>
+                                    <h3 class="text-lg font-semibold text-white mb-5 flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                        Embed Customization
+                                    </h3>
+                                    
+                                    <div class="space-y-5">
+                                        <div class="space-y-2">
+                                            <label class="block text-sm font-medium text-zinc-300">Embed Title <span class="text-zinc-600">(Optional)</span></label>
+                                            <input type="text" id="embed-title" placeholder="e.g. Verify Your Identity to Access the Server" class="input-field w-full rounded-xl px-4 py-3.5 text-sm shadow-inner placeholder-zinc-600">
+                                        </div>
+                                        
+                                        <div class="space-y-2">
+                                            <label class="block text-sm font-medium text-zinc-300">Embed Description <span class="text-zinc-600">(Optional)</span></label>
+                                            <textarea id="embed-desc" rows="4" placeholder="e.g. Click the button below and securely verify using Discord OAuth2." class="input-field w-full rounded-xl px-4 py-3.5 text-sm shadow-inner custom-scrollbar placeholder-zinc-600"></textarea>
+                                            <p class="text-xs text-zinc-500 pl-1">Standard Markdown supported ( **bold**, *italic*, > blockquote )</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Footer Actions -->
+                        <div id="bot-in-server-footer" class="hidden mt-6 pt-5 border-t border-white/5">
+                            <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                <span class="text-xs font-medium text-indigo-400/80 flex items-center gap-2 bg-indigo-500/10 px-3 py-1.5 rounded-full border border-indigo-500/20">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+                                    End-to-End Secure
+                                </span>
+                                <button onclick="saveConfig()" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-8 rounded-xl shadow-[0_0_20px_rgba(99,102,241,0.3)] hover:shadow-[0_0_25px_rgba(99,102,241,0.5)] transition duration-300 flex items-center justify-center gap-2.5 border border-indigo-500 scale-100 active:scale-[0.98]">
+                                    Publish Panel
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
                                 </button>
                             </div>
-                            <div id="status-message" class="text-sm text-center pt-2 font-medium opacity-0 transition-opacity duration-300"></div>
+                            <div id="status-message" class="text-sm text-center pt-4 font-medium opacity-0 transition-opacity duration-300 h-6 flex items-center justify-center"></div>
                         </div>
+
                     </div>
                 </div>
             </div>
@@ -205,8 +285,7 @@
                 });
                 
                 if (res.status === 401) {
-                    const loadingEl = document.getElementById("loading");
-                    loadingEl.innerHTML = `<svg class="w-10 h-10 text-rose-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg><span class="text-rose-400 font-medium">Session expired. Please reload.</span>`;
+                    showLoadingError("Session expired. Please reload the page to authenticate.");
                     return;
                 }
                 
@@ -223,33 +302,34 @@
                 });
                 
                 if (adminGuilds.length === 0) {
-                    const loadingEl = document.getElementById("loading");
-                    loadingEl.innerHTML = `<svg class="w-10 h-10 text-rose-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg><span class="text-rose-400 font-medium text-center px-4">You do not have Administrator permissions in any server.</span>`;
+                    showLoadingError("You do not have Administrator permissions in any server.");
                     return;
                 }
 
                 container.innerHTML = "";
                 adminGuilds.forEach(g => {
                     const el = document.createElement("div");
-                    el.className = "group bg-slate-800/80 p-3.5 rounded-xl cursor-pointer hover:bg-slate-700/80 border border-transparent hover:border-indigo-500/50 flex items-center transition duration-200 select-none";
+                    el.className = "server-item bg-black/20 p-3 rounded-xl cursor-pointer flex items-center select-none shadow-sm group";
                     el.onclick = () => {
-                        // Reselect styling
-                        document.querySelectorAll('#server-list > div').forEach(node => {
-                            node.classList.remove('bg-indigo-500/10', 'border-indigo-500');
-                            node.classList.add('border-transparent');
+                        document.querySelectorAll('.server-item').forEach(node => {
+                            node.classList.remove('active');
                         });
-                        el.classList.add('bg-indigo-500/10', 'border-indigo-500');
-                        el.classList.remove('border-transparent');
+                        el.classList.add('active');
                         selectGuild(g.id, g.name);
                     };
                     
                     const iconUrl = g.icon ? `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png';
+                    const initials = g.name.substring(0, 2).toUpperCase();
                     
+                    let imageHTML = g.icon 
+                        ? `<img src="${iconUrl}" class="w-11 h-11 rounded-full border border-white/10 shadow-sm object-cover group-hover:border-indigo-400/50 transition-colors">` 
+                        : `<div class="w-11 h-11 rounded-full border border-white/10 shadow-sm bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400 group-hover:border-indigo-400/50 transition-colors">${initials}</div>`;
+
                     el.innerHTML = `
                         <div class="relative shrink-0 mr-3.5">
-                            <img src="${iconUrl}" class="w-12 h-12 rounded-full border border-slate-600 shadow-sm object-cover">
+                            ${imageHTML}
                         </div>
-                        <div class="font-medium text-slate-200 truncate group-hover:text-white transition-colors">${g.name}</div>
+                        <div class="font-medium text-zinc-300 truncate group-hover:text-white transition-colors text-sm">${g.name}</div>
                     `;
                     container.appendChild(el);
                 });
@@ -257,15 +337,32 @@
                 document.getElementById("loading").classList.add("hidden");
                 container.classList.remove("hidden");
             } catch (err) {
-                document.getElementById("loading").innerText = "Error loading servers.";
+                showLoadingError("Error loading servers. Check your connection.");
             }
+        }
+
+        function showLoadingError(msg) {
+            const loadingEl = document.getElementById("loading");
+            loadingEl.innerHTML = `
+                <div class="w-12 h-12 bg-rose-500/10 rounded-full flex items-center justify-center mb-4 border border-rose-500/20">
+                    <svg class="w-6 h-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <span class="text-rose-400 font-medium text-center px-4 text-sm">${msg}</span>
+            `;
         }
 
         function backToServerList() {
             activeGuildId = null;
-            document.getElementById("left-column").classList.remove("hidden");
-            document.getElementById("right-column").classList.add("hidden");
-            document.getElementById("right-column").classList.add("lg:block"); // Maintain flex on desktop
+            
+            // Re-show left col, hide right col on mobile
+            document.getElementById("left-column").classList.remove("mobile-hidden");
+            document.getElementById("right-column").classList.add("mobile-hidden");
+            document.getElementById("right-column").classList.remove("mobile-active");
+            
+            // Remove active classes visually
+            document.querySelectorAll('.server-item').forEach(node => {
+                node.classList.remove('active');
+            });
         }
 
         async function selectGuild(id, name) {
@@ -277,14 +374,16 @@
             
             document.getElementById("bot-not-in-server").classList.add("hidden");
             document.getElementById("bot-in-server").classList.add("hidden");
+            document.getElementById("bot-in-server-footer").classList.add("hidden");
             
             const status = document.getElementById("status-message");
             status.style.opacity = 0;
             
             // On mobile, hide the left column and show the right column
             if (window.innerWidth < 1024) {
-                document.getElementById("left-column").classList.add("hidden");
-                document.getElementById("right-column").classList.remove("hidden");
+                document.getElementById("left-column").classList.add("mobile-hidden");
+                document.getElementById("right-column").classList.remove("mobile-hidden");
+                document.getElementById("right-column").classList.add("mobile-active");
             }
             
             fetchGuildInfo();
@@ -298,15 +397,18 @@
             const data = await res.json();
             
             if (!res.ok) {
-                showMessage("Failed to fetch guild details: " + (data.detail || "Unknown error"), false);
+                showMessage("Failed: " + (data.detail || "Unknown error"), false);
                 return;
             }
             
             if (!data.in_guild) {
                 document.getElementById("bot-not-in-server").classList.remove("hidden");
+                document.getElementById("bot-not-in-server").style.display = "flex";
                 document.getElementById("invite-link").href = data.invite_url;
             } else {
+                document.getElementById("bot-not-in-server").style.display = "none";
                 document.getElementById("bot-in-server").classList.remove("hidden");
+                document.getElementById("bot-in-server-footer").classList.remove("hidden");
                 
                 const cSelect = document.getElementById("channel-select");
                 cSelect.innerHTML = "";
@@ -326,12 +428,14 @@
 
         function showMessage(msg, isSuccess) {
             const status = document.getElementById("status-message");
-            status.innerText = msg;
-            if (isSuccess) {
-                status.className = "text-sm text-center pt-4 font-medium transition-opacity duration-300 text-emerald-400";
-            } else {
-                status.className = "text-sm text-center pt-4 font-medium transition-opacity duration-300 text-rose-400";
-            }
+            status.innerHTML = isSuccess 
+                ? `<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg> ${msg}`
+                : `<svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg> ${msg}`;
+            
+            status.className = isSuccess
+                ? "text-sm text-center pt-4 font-semibold transition-opacity duration-300 text-emerald-400 flex items-center justify-center"
+                : "text-sm text-center pt-4 font-semibold transition-opacity duration-300 text-rose-400 flex items-center justify-center";
+                
             status.style.opacity = 1;
             
             setTimeout(() => {
@@ -353,8 +457,8 @@
             }
 
             const status = document.getElementById("status-message");
-            status.innerText = "Configuring server and sending embed...";
-            status.className = "text-sm text-center pt-4 font-medium transition-opacity duration-300 text-indigo-400";
+            status.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Publishing setup...`;
+            status.className = "text-sm text-center pt-4 font-medium transition-opacity duration-300 text-indigo-400 flex items-center justify-center";
             status.style.opacity = 1;
             
             try {
@@ -374,15 +478,14 @@
                 });
                 const data = await res.json();
                 if(res.ok && data.success) {
-                    showMessage("✅ Success! The verification panel has been embedded.", true);
-                    // clear fields
+                    showMessage("Configuration broadcasted successfully.", true);
                     document.getElementById("embed-title").value = "";
                     document.getElementById("embed-desc").value = "";
                 } else {
-                    showMessage("Error: " + (data.detail || "Unknown error"), false);
+                    showMessage(data.detail || "Setup failed. Check permissions.", false);
                 }
             } catch(e) {
-                showMessage("Failed to send request. Check your connection.", false);
+                showMessage("Connection error. Try again.", false);
             }
         }
 
