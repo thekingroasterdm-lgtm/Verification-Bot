@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 import httpx
 import uvicorn
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import psycopg2
 from dotenv import load_dotenv
 
@@ -144,8 +144,11 @@ async def refresh_access_token(discord_id: str, refresh_token: str):
             except Exception as e:
                 logger.error(f"Failed to store refreshed token for {discord_id}: {e}")
             return new_acc
+        elif resp.status_code in [400, 401]:
+            logger.error(f"Token refresh completely failed (deauthorized/invalid auth): {resp.text}")
+            return "REVOKED"
         else:
-            logger.error(f"Failed to refresh token: {resp.text}")
+            logger.error(f"Failed to refresh token (possible server error): {resp.text}")
     return None
 
 # Initialize Discord Bot client
@@ -199,6 +202,79 @@ async def dispatch_premium_embed(channel_id: int):
     await channel.send(embed=embed, view=view)
 
 
+@tasks.loop(hours=6)
+async def check_authorizations():
+    logger.info("Starting background check for deauthorized users...")
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        cur.execute("SELECT discord_id, access_token, refresh_token FROM verified_users")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Failed to fetch users from DB for check: {e}")
+        return
+
+    if not users:
+        return
+
+    guild = bot.get_guild(int(GUILD_ID)) if GUILD_ID else None
+    if not guild:
+        try:
+            guild = await bot.fetch_guild(int(GUILD_ID))
+        except Exception:
+            logger.error("Could not fetch guild for background check.")
+            return
+
+    role = guild.get_role(int(ROLE_ID)) if ROLE_ID else None
+    if not role:
+        logger.error(f"Could not find role {ROLE_ID} in guild {GUILD_ID}.")
+        return
+
+    async with httpx.AsyncClient() as client:
+        # Check users in batches to be safe, but a delay is good too
+        for discord_id, access_token, refresh_token in users:
+            try:
+                await asyncio.sleep(2)
+                
+                user_api_url = "https://discord.com/api/users/@me"
+                headers = {"Authorization": f"Bearer {access_token}"}
+                
+                resp = await client.get(user_api_url, headers=headers)
+                
+                if resp.status_code == 401:
+                    logger.info(f"Token for {discord_id} expired. Attempting refresh...")
+                    new_acc = await refresh_access_token(discord_id, refresh_token)
+                    
+                    if new_acc == "REVOKED":
+                        logger.warning(f"Refresh failed for {discord_id} with REVOKED status. Deleting from DB and removing role...")
+                        try:
+                            # 1. Remove role
+                            member = guild.get_member(int(discord_id))
+                            if not member:
+                                try:
+                                    member = await guild.fetch_member(int(discord_id))
+                                except discord.NotFound:
+                                    member = None
+                            
+                            if member:
+                                await member.remove_roles(role, reason="User deauthorized the bot.")
+                                logger.info(f"Removed role from member {discord_id}.")
+                            
+                            # 2. Delete from DB
+                            conn = psycopg2.connect(DATABASE_URL)
+                            cur = conn.cursor()
+                            cur.execute("DELETE FROM verified_users WHERE discord_id = %s", (str(discord_id),))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                                
+                        except Exception as e:
+                            logger.error(f"Error while un-verifying user {discord_id}: {e}")
+            except Exception as e:
+                logger.error(f"Error checking user {discord_id}: {e}")
+
 @bot.event
 async def on_ready():
     logger.info(f"Discord Bot online as {bot.user}")
@@ -207,6 +283,9 @@ async def on_ready():
         logger.info(f"Synced {len(synced)} command(s)")
     except Exception as e:
         logger.error(f"Failed to sync commands: {e}")
+        
+    if not check_authorizations.is_running():
+        check_authorizations.start()
 
 @bot.tree.command(name="setup", description="Send the verification embed to the current channel (Owner only)")
 async def setup_slash(interaction: discord.Interaction):
