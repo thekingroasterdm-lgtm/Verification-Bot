@@ -281,6 +281,11 @@
             });
             const data = await res.json();
             
+            if (!res.ok) {
+                showMessage("Failed to fetch guild details: " + (data.detail || "Unknown error"), false);
+                return;
+            }
+            
             if (!data.in_guild) {
                 document.getElementById("bot-not-in-server").classList.remove("hidden");
                 document.getElementById("invite-link").href = data.invite_url;
