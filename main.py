@@ -844,8 +844,16 @@ async def get_guild_details(guild_id: str, request: Request):
             guild = None
             
     if not guild:
-        invite_url = f"https://discord.com/oauth2/authorize?client_id={CLIENT_ID}&permissions=8&scope=bot%20applications.commands&guild_id={guild_id}"
-        return {"in_guild": False, "invite_url": invite_url, "detail": f"Server not found. Reason: {fetch_err}"}
+        mismatch_warn = ""
+        try:
+            bot_id = str(bot.user.id) if bot.user else "Unknown"
+            if str(CLIENT_ID) != bot_id:
+                mismatch_warn = f" MISMATCH! Bot Token ID: {bot_id}, but CLIENT_ID in .env is {CLIENT_ID}. You invited {CLIENT_ID} but the server runs as {bot_id}. Please fix your .env variables!"
+        except:
+            pass
+            
+        invite_url = f"https://discord.com/oauth2/authorize?client_id={bot.user.id if bot.user else CLIENT_ID}&permissions=8&integration_type=0&scope=bot%20applications.commands&guild_id={guild_id}"
+        return {"in_guild": False, "invite_url": invite_url, "detail": f"Server not found. Reason: {fetch_err}.{mismatch_warn}"}
         
     try:
         # Try to use cached channels, fallback to fetch
