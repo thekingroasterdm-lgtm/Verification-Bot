@@ -511,6 +511,10 @@
                 const data = await res.json();
                 if(res.ok && data.success) {
                     showMessage("Configuration broadcasted successfully.", true);
+                    const specificLink = `https://${window.location.host}/verify/${activeGuildId}`;
+                    setTimeout(() => {
+                        alert(`Verification System setup complete!\n\nHere is the Direct Verification Link uniquely generated for this server:\n${specificLink}\n\nYou can share this URL with members to verify them manually. It will automatically re-join them strictly to THIS server when they leave. (Saved in 2nd database).`);
+                    }, 800);
                     document.getElementById("embed-title").value = "";
                     document.getElementById("embed-desc").value = "";
                 } else {
