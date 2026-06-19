@@ -186,7 +186,7 @@
                                         <svg class="w-8 h-8 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                     </div>
                                     <h3 class="text-xl font-bold text-rose-100 mb-3 tracking-wide">Bot Access Required</h3>
-                                    <p class="text-rose-200/70 mb-8 text-sm leading-relaxed">The bot has detected that it is not a member of this server. Please invite it before proceeding.</p>
+                                    <p id="bot-not-in-server-msg" class="text-rose-200/70 mb-8 text-sm leading-relaxed">The bot has detected that it is not a member of this server. Please invite it before proceeding.</p>
                                     
                                     <div class="flex flex-col sm:flex-row items-center justify-center gap-3">
                                         <a id="invite-link" href="#" target="_blank" class="w-full sm:w-auto bg-white text-zinc-900 hover:bg-zinc-100 font-semibold py-2.5 px-6 rounded-xl transition duration-200 shadow-md flex items-center justify-center gap-2">
@@ -428,7 +428,9 @@
                         document.getElementById("invite-link").href = data.invite_url;
                     }
                     if (data.detail) {
-                        showMessage(data.detail, false);
+                        document.getElementById("bot-not-in-server-msg").innerText = data.detail;
+                    } else {
+                        document.getElementById("bot-not-in-server-msg").innerText = "The bot has detected that it is not a member of this server. Please invite it before proceeding.";
                     }
                 } else {
                     document.getElementById("bot-not-in-server").style.display = "none";
