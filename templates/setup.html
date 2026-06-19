@@ -193,8 +193,8 @@
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
                                             Invite Bot
                                         </a>
-                                        <button onclick="fetchGuildInfo()" class="w-full sm:w-auto bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 hover:border-zinc-600 font-medium py-2.5 px-6 rounded-xl transition duration-200 flex items-center justify-center gap-2">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                        <button id="refresh-btn" onclick="handleRefresh()" class="w-full sm:w-auto bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-700 hover:border-zinc-600 font-medium py-2.5 px-6 rounded-xl transition duration-200 flex items-center justify-center gap-2">
+                                            <svg id="refresh-icon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                                             Refresh
                                         </button>
                                     </div>
@@ -394,6 +394,18 @@
             }
             
             fetchGuildInfo();
+        }
+
+        async function handleRefresh() {
+            const btn = document.getElementById("refresh-btn");
+            const icon = document.getElementById("refresh-icon");
+            btn.disabled = true;
+            icon.classList.add("animate-spin");
+            
+            await fetchGuildInfo();
+            
+            btn.disabled = false;
+            icon.classList.remove("animate-spin");
         }
 
         async function fetchGuildInfo() {
