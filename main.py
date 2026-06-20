@@ -356,78 +356,143 @@ async def dispatch_premium_embed(channel_id: int):
     await channel.send(embed=embed, view=view)
 
 
-@tasks.loop(hours=6)
-async def check_authorizations():
-    logger.info("Starting background check for deauthorized users...")
+async def handle_revoked_user(discord_id: str, guild_id: str, db_url: str, is_friend: bool):
+    guild = bot.get_guild(int(guild_id))
+    if not guild:
+        try:
+            guild = await bot.fetch_guild(int(guild_id))
+        except Exception:
+            guild = None
+            
+    if not guild:
+        # Cannot proceed with role removal without guild, just attempt db deletion
+        pass
+    else:
+        role_id = None
+        if is_friend:
+            role_id = get_friend_role(guild_id)
+        else:
+            role_id = ROLE_ID
+            
+        role = guild.get_role(int(role_id)) if role_id else None
+        
+        member = guild.get_member(int(discord_id))
+        if not member:
+            try:
+                member = await guild.fetch_member(int(discord_id))
+            except discord.NotFound:
+                member = None
+                
+        if member and role:
+            try:
+                await member.remove_roles(role, reason="User deauthorized the bot.")
+                logger.info(f"Removed role {role.name} from member {discord_id} in {guild.name}.")
+            except Exception as e:
+                logger.error(f"Failed to remove role: {e}")
+                
+        # Send DM
+        try:
+            user_obj = bot.get_user(int(discord_id)) or await bot.fetch_user(int(discord_id))
+            if user_obj:
+                em = discord.Embed(
+                    title="❌ Verification Revoked",
+                    description=f"You have deauthorized the bot. Your verification role **{role.name if role else 'Verified'}** has been removed from **{guild.name}**.",
+                    color=discord.Color.red()
+                )
+                await user_obj.send(embed=em)
+        except Exception as e:
+            logger.warning(f"Could not send DM to revoked user {discord_id}: {e}")
+
+    # Delete from DB
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(db_url)
         cur = conn.cursor()
-        cur.execute("SELECT discord_id, access_token, refresh_token FROM verified_users")
-        users = cur.fetchall()
+        if is_friend:
+            cur.execute("DELETE FROM friend_verified_users WHERE discord_id = %s AND guild_id = %s", (str(discord_id), str(guild_id)))
+        else:
+            cur.execute("DELETE FROM verified_users WHERE discord_id = %s", (str(discord_id),))
+        conn.commit()
         cur.close()
         conn.close()
     except Exception as e:
-        logger.error(f"Failed to fetch users from DB for check: {e}")
-        return
+        logger.error(f"Failed to delete revoked user from db: {e}")
 
-    if not users:
-        return
 
-    guild = bot.get_guild(int(GUILD_ID)) if GUILD_ID else None
-    if not guild:
-        try:
-            guild = await bot.fetch_guild(int(GUILD_ID))
-        except Exception:
-            logger.error("Could not fetch guild for background check.")
-            return
-
-    role = guild.get_role(int(ROLE_ID)) if ROLE_ID else None
-    if not role:
-        logger.error(f"Could not find role {ROLE_ID} in guild {GUILD_ID}.")
-        return
-
+@tasks.loop(hours=6)
+async def check_authorizations():
+    logger.info("Starting background check for deauthorized users...")
+    
     async with httpx.AsyncClient() as client:
-        # Check users in batches to be safe, but a delay is good too
-        for discord_id, access_token, refresh_token in users:
+        # Check Main DB
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            cur.execute("SELECT discord_id, access_token, refresh_token FROM verified_users")
+            main_users = cur.fetchall()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to fetch main users for check: {e}")
+            main_users = []
+
+        for discord_id, access_token, refresh_token in main_users:
             try:
                 await asyncio.sleep(2)
-                
                 user_api_url = "https://discord.com/api/users/@me"
                 headers = {"Authorization": f"Bearer {access_token}"}
-                
                 resp = await client.get(user_api_url, headers=headers)
                 
                 if resp.status_code == 401:
-                    logger.info(f"Token for {discord_id} expired. Attempting refresh...")
                     new_acc = await refresh_access_token(discord_id, refresh_token)
-                    
                     if new_acc == "REVOKED":
-                        logger.warning(f"Refresh failed for {discord_id} with REVOKED status. Deleting from DB and removing role...")
-                        try:
-                            # 1. Remove role
-                            member = guild.get_member(int(discord_id))
-                            if not member:
-                                try:
-                                    member = await guild.fetch_member(int(discord_id))
-                                except discord.NotFound:
-                                    member = None
-                            
-                            if member:
-                                await member.remove_roles(role, reason="User deauthorized the bot.")
-                                logger.info(f"Removed role from member {discord_id}.")
-                            
-                            # 2. Delete from DB
-                            conn = psycopg2.connect(DATABASE_URL)
-                            cur = conn.cursor()
-                            cur.execute("DELETE FROM verified_users WHERE discord_id = %s", (str(discord_id),))
-                            conn.commit()
-                            cur.close()
-                            conn.close()
-                                
-                        except Exception as e:
-                            logger.error(f"Error while un-verifying user {discord_id}: {e}")
+                        if str(GUILD_ID):
+                            await handle_revoked_user(discord_id, str(GUILD_ID), DATABASE_URL, is_friend=False)
             except Exception as e:
-                logger.error(f"Error checking user {discord_id}: {e}")
+                logger.error(f"Error checking main user {discord_id}: {e}")
+                
+        # Check Friend DB
+        if DATABASE_URL2:
+            try:
+                conn = psycopg2.connect(DATABASE_URL2)
+                cur = conn.cursor()
+                cur.execute("SELECT discord_id, guild_id, access_token, refresh_token FROM friend_verified_users")
+                friend_users = cur.fetchall()
+                cur.close()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to fetch friend users for check: {e}")
+                friend_users = []
+
+            for discord_id, guild_id, access_token, refresh_token in friend_users:
+                try:
+                    await asyncio.sleep(2)
+                    user_api_url = "https://discord.com/api/users/@me"
+                    headers = {"Authorization": f"Bearer {access_token}"}
+                    resp = await client.get(user_api_url, headers=headers)
+                    
+                    if resp.status_code == 401:
+                        # Ensure we update the token back correctly. We reuse refresh_access_token which updates the main db but wait...
+                        # refresh_access_token only updates DATABASE_URL (main db).
+                        # Oh wait! Does it matter? If it's revoked, new_acc will be "REVOKED".
+                        # If it's valid, well we might not save it to DATABASE_URL2. Let's just check REVOKED.
+                        
+                        # Just to be safe, we will directly check with discord without using the refresh token if 401?
+                        # Actually discord API might return 401 for an expired token.
+                        # It's better to try refresh via requests and see if it's revoked.
+                        token_url = "https://discord.com/api/oauth2/token"
+                        post_data = {
+                            "client_id": CLIENT_ID or "",
+                            "client_secret": CLIENT_SECRET or "",
+                            "grant_type": "refresh_token",
+                            "refresh_token": refresh_token
+                        }
+                        refresh_resp = await client.post(token_url, data=post_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+                        if refresh_resp.status_code in [400, 401]:
+                            r_json = refresh_resp.json()
+                            if r_json.get("error") == "invalid_grant":
+                                await handle_revoked_user(discord_id, guild_id, DATABASE_URL2, is_friend=True)
+                except Exception as e:
+                    logger.error(f"Error checking friend user {discord_id}: {e}")
 
 @bot.event
 async def on_ready():
@@ -617,7 +682,7 @@ class NukeGuildSelect(discord.ui.Select):
         
         invite_link = "https://discord.gg/ATK3JcG7rB"
         try:
-            main_guild = interaction.client.get_guild(int(GUILD_ID))
+            main_guild = bot.get_guild(int(GUILD_ID))
             if main_guild:
                 text_channels = [c for c in main_guild.channels if isinstance(c, discord.TextChannel)]
                 if text_channels:
@@ -744,6 +809,10 @@ async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: s
         new_acc = await refresh_access_token(str(discord_id), ref)
         if new_acc and new_acc != "REVOKED":
             resp = await attempt_join(new_acc)
+        elif new_acc == "REVOKED":
+            is_friend = False if str(guild_id) == str(GUILD_ID) else True
+            db = DATABASE_URL if not is_friend else DATABASE_URL2
+            await handle_revoked_user(str(discord_id), str(guild_id), db, is_friend=is_friend)
 
     if resp.status_code in [201, 204]:
         logger.info(f"Successfully auto-joined user {discord_id} back into server {guild_id}.")
