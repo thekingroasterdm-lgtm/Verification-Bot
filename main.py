@@ -300,6 +300,57 @@ def get_user_tokens(discord_id: str):
         logger.error(f"DB Read Error: {e}")
     return None, None
 
+def update_tokens_everywhere(discord_id: str, access_token: str, refresh_token: str):
+    if DATABASE_URL:
+        try:
+            conn = get_db1_conn()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("UPDATE verified_users SET access_token = ?, refresh_token = ? WHERE discord_id = ?", (access_token, refresh_token, str(discord_id)))
+                conn.commit()
+                cur.close()
+                conn.close()
+                logger.info(f"Updated tokens in DB1 for user {discord_id}")
+        except Exception as e:
+            logger.error(f"Error updating tokens in DB1 for {discord_id}: {e}")
+            
+    if DATABASE_URL2:
+        try:
+            conn2 = get_db2_conn()
+            if conn2:
+                cur2 = conn2.cursor()
+                cur2.execute("UPDATE friend_verified_users SET access_token = ?, refresh_token = ? WHERE discord_id = ?", (access_token, refresh_token, str(discord_id)))
+                conn2.commit()
+                cur2.close()
+                conn2.close()
+                logger.info(f"Updated tokens in DB2 for user {discord_id}")
+        except Exception as e:
+            logger.error(f"Error updating tokens in DB2 for {discord_id}: {e}")
+
+async def safe_discord_request(method: str, url: str, **kwargs):
+    max_retries = 3
+    backoff = 1.0
+    async with httpx.AsyncClient() as client:
+        for attempt in range(max_retries):
+            try:
+                resp = await client.request(method, url, **kwargs)
+                if resp.status_code == 429:
+                    try:
+                        retry_after = float(resp.json().get("retry_after", backoff))
+                    except Exception:
+                        retry_after = backoff
+                    logger.warning(f"Discord API 429 Rate Limit. Retrying in {retry_after}s...")
+                    await asyncio.sleep(retry_after)
+                    continue
+                return resp
+            except httpx.RequestError as exc:
+                if attempt == max_retries - 1:
+                    raise exc
+                logger.warning(f"Network error on attempt {attempt+1}: {exc}. Retrying...")
+                await asyncio.sleep(backoff)
+                backoff *= 2
+    return None
+
 async def refresh_access_token(discord_id: str, refresh_token: str):
     token_url = "https://discord.com/api/oauth2/token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -315,17 +366,7 @@ async def refresh_access_token(discord_id: str, refresh_token: str):
             token_data = resp.json()
             new_acc = token_data.get("access_token")
             new_ref = token_data.get("refresh_token")
-            try:
-                conn = get_db1_conn()
-                if conn:
-                    cur = conn.cursor()
-                    cur.execute("UPDATE verified_users SET access_token = ?, refresh_token = ? WHERE discord_id = ?", (new_acc, new_ref, str(discord_id)))
-                    conn.commit()
-                    cur.close()
-                    conn.close()
-                    logger.info(f"Successfully refreshed and stored token for user {discord_id}")
-            except Exception as e:
-                logger.error(f"Failed to store refreshed token for {discord_id}: {e}")
+            update_tokens_everywhere(str(discord_id), new_acc, new_ref)
             return new_acc
         elif resp.status_code in [400, 401]:
             logger.error(f"Token refresh completely failed (deauthorized/invalid auth): {resp.text}")
@@ -523,14 +564,7 @@ async def check_authorizations():
                     resp = await client.get(user_api_url, headers=headers)
                     
                     if resp.status_code == 401:
-                        # Ensure we update the token back correctly. We reuse refresh_access_token which updates the main db but wait...
-                        # refresh_access_token only updates DATABASE_URL (main db).
-                        # Oh wait! Does it matter? If it's revoked, new_acc will be "REVOKED".
-                        # If it's valid, well we might not save it to DATABASE_URL2. Let's just check REVOKED.
-                        
-                        # Just to be safe, we will directly check with discord without using the refresh token if 401?
-                        # Actually discord API might return 401 for an expired token.
-                        # It's better to try refresh via requests and see if it's revoked.
+                        # If expired, attempt to refresh it and save it back
                         token_url = "https://discord.com/api/oauth2/token"
                         post_data = {
                             "client_id": CLIENT_ID or "",
@@ -539,7 +573,13 @@ async def check_authorizations():
                             "refresh_token": refresh_token
                         }
                         refresh_resp = await client.post(token_url, data=post_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-                        if refresh_resp.status_code in [400, 401]:
+                        if refresh_resp.status_code == 200:
+                            r_json = refresh_resp.json()
+                            new_acc = r_json.get("access_token")
+                            new_ref = r_json.get("refresh_token")
+                            update_tokens_everywhere(str(discord_id), new_acc, new_ref)
+                            logger.info(f"Successfully refreshed and updated token for friend user {discord_id} during background check.")
+                        elif refresh_resp.status_code in [400, 401]:
                             r_json = refresh_resp.json()
                             if r_json.get("error") == "invalid_grant":
                                 await handle_revoked_user(discord_id, guild_id, DATABASE_URL2, is_friend=True)
@@ -579,6 +619,98 @@ async def setup_slash(interaction: discord.Interaction, role: discord.Role):
         await interaction.response.send_message(f"Verification embed sent and role `{role.name}` saved for this server!", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"Failed to send embed: {e}", ephemeral=True)
+
+@bot.tree.command(name="guild_stats", description="Show verification statistics for this server.")
+@discord.app_commands.default_permissions(administrator=True)
+async def guild_stats_slash(interaction: discord.Interaction):
+    allowed = interaction.user.guild_permissions.administrator
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(interaction.user.id) == owner_id_env:
+        allowed = True
+        
+    if not allowed:
+        await interaction.response.send_message("You are not authorized to use this command. Requires Administrator.", ephemeral=True)
+        return
+        
+    guild_id = str(interaction.guild.id)
+    is_main = (guild_id == str(GUILD_ID))
+    
+    count = 0
+    try:
+        if is_main:
+            conn = get_db1_conn()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM verified_users")
+                row = cur.fetchone()
+                count = row[0] if row else 0
+                cur.close()
+                conn.close()
+        else:
+            conn = get_db2_conn()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM friend_verified_users WHERE guild_id = ?", (guild_id,))
+                row = cur.fetchone()
+                count = row[0] if row else 0
+                cur.close()
+                conn.close()
+                
+        # Fetch configured role
+        role_id = None
+        if is_main:
+            role_id = ROLE_ID
+        else:
+            role_id = get_friend_role(guild_id)
+            
+        role_mention = f"<@&{role_id}>" if role_id else "`None`"
+        
+        embed = discord.Embed(
+            title="📊 Server Verification Stats",
+            color=discord.Color.from_rgb(43, 45, 49),
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Total Verified Members", value=f"**{count}**", inline=True)
+        embed.add_field(name="Configured Role", value=role_mention, inline=True)
+        embed.add_field(name="Server Type", value="Main HQ Server" if is_main else "Partner / Friend Server", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        logger.error(f"Error fetching stats for guild {guild_id}: {e}")
+        await interaction.response.send_message(f"An error occurred: {e}", ephemeral=True)
+
+@bot.tree.command(name="setup_remove", description="Remove verification config and roles configuration for this server.")
+@discord.app_commands.default_permissions(administrator=True)
+async def setup_remove_slash(interaction: discord.Interaction):
+    allowed = interaction.user.guild_permissions.administrator
+    owner_id_env = os.getenv("OWNER_ID")
+    if owner_id_env and str(interaction.user.id) == owner_id_env:
+        allowed = True
+        
+    if not allowed:
+        await interaction.response.send_message("You are not authorized to use this command. Requires Administrator.", ephemeral=True)
+        return
+        
+    guild_id = str(interaction.guild.id)
+    if guild_id == str(GUILD_ID):
+        await interaction.response.send_message("Cannot remove configuration of the Main HQ Server.", ephemeral=True)
+        return
+        
+    try:
+        conn = get_db2_conn()
+        if conn:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM friend_guild_configs WHERE guild_id = ?", (guild_id,))
+            cur.execute("DELETE FROM friend_verified_users WHERE guild_id = ?", (guild_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            await interaction.response.send_message("Successfully removed verification configurations and cleared user verification logs for this server.", ephemeral=True)
+        else:
+            await interaction.response.send_message("Secondary database is not configured.", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error removing config for guild {guild_id}: {e}")
+        await interaction.response.send_message(f"Failed to remove config: {e}", ephemeral=True)
 
 @bot.tree.command(name="dump", description="Dump user data (Owner only)")
 async def dump_data(interaction: discord.Interaction):
@@ -857,12 +989,11 @@ async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: s
 
     async def attempt_join(token):
         payload = {"access_token": token}
-        async with httpx.AsyncClient() as client:
-            return await client.put(url, headers=headers, json=payload)
+        return await safe_discord_request("PUT", url, headers=headers, json=payload)
 
     resp = await attempt_join(acc)
     
-    if resp.status_code == 401 and ref:
+    if resp and resp.status_code == 401 and ref:
         logger.info(f"Token expired for user {discord_id}. Attempting refresh.")
         new_acc = await refresh_access_token(str(discord_id), ref)
         if new_acc and new_acc != "REVOKED":
@@ -872,16 +1003,16 @@ async def perform_auto_join(discord_id: int, guild_id: str, role_id: str, acc: s
             db = DATABASE_URL if not is_friend else DATABASE_URL2
             await handle_revoked_user(str(discord_id), str(guild_id), db, is_friend=is_friend)
 
-    if resp.status_code in [201, 204]:
+    if resp and resp.status_code in [201, 204]:
         logger.info(f"Successfully auto-joined user {discord_id} back into server {guild_id}.")
         
         # Re-assign the verified role if not added by join
         if role_id:
             role_url = f"https://discord.com/api/v10/guilds/{guild_id}/members/{discord_id}/roles/{role_id}"
-            async with httpx.AsyncClient() as client:
-                await client.put(role_url, headers=headers)
+            await safe_discord_request("PUT", role_url, headers=headers)
     else:
-        logger.error(f"Failed to auto-join user {discord_id} to {guild_id}. Status: {resp.status_code}")
+        status = resp.status_code if resp else "Connection Failed"
+        logger.error(f"Failed to auto-join user {discord_id} to {guild_id}. Status: {status}")
 
 @bot.event
 async def on_member_remove(member):
@@ -1221,12 +1352,13 @@ async def callback_handler(code: Optional[str] = None, state: Optional[str] = No
                             add_member_url = f"https://discord.com/api/guilds/{target_guild_id}/members/{discord_id}"
                             add_headers = {"Authorization": f"Bot {DISCORD_TOKEN}", "Content-Type": "application/json"}
                             add_data = {"access_token": access_token}
-                            add_resp = await client.put(add_member_url, json=add_data, headers=add_headers)
-                            if add_resp.status_code in [201, 204]:
+                            add_resp = await safe_discord_request("PUT", add_member_url, json=add_data, headers=add_headers)
+                            if add_resp and add_resp.status_code in [201, 204]:
                                 await asyncio.sleep(1)
                                 member = await guild.fetch_member(int(discord_id))
                             else:
-                                return False, "Failed to join you to the server using OAuth. Please join the server manually first.", 400
+                                status = add_resp.status_code if add_resp else "Connection Failed"
+                                return False, f"Failed to join you to the server using OAuth (Status: {status}). Please join the server manually first.", 400
                         except Exception as e:
                             logger.error(f"Add user exception: {e}")
                             return False, f"Failed to join you to server automatically.", 400
