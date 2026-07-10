@@ -11,7 +11,7 @@ import httpx
 import uvicorn
 import discord
 from discord.ext import commands, tasks
-import psycopg2
+import libsql
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -28,10 +28,36 @@ CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
 REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://verify.digamber.in/callback")
 GUILD_ID = os.getenv("GUILD_ID")  # Discord Server ID
 ROLE_ID = os.getenv("VERIFIED_ROLE_ID")  # Role to assign on verification
-DATABASE_URL = os.getenv("DATABASE_URL")  # Postgres URL from Render
+DATABASE_URL = os.getenv("DATABASE_URL")  # Turso URL or local SQLite path
 DATABASE_URL2 = os.getenv("DATABASE_URL2")
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
+TURSO_AUTH_TOKEN2 = os.getenv("TURSO_AUTH_TOKEN2")
 
 OAUTH_SCOPES = "identify email guilds.join"
+
+def get_db1_conn():
+    if not DATABASE_URL:
+        return None
+    try:
+        if DATABASE_URL.startswith(("libsql://", "https://", "wss://")):
+            return libsql.connect(DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+        else:
+            return libsql.connect(DATABASE_URL)
+    except Exception as e:
+        logger.error(f"Error connecting to DATABASE_URL: {e}")
+        return None
+
+def get_db2_conn():
+    if not DATABASE_URL2:
+        return None
+    try:
+        if DATABASE_URL2.startswith(("libsql://", "https://", "wss://")):
+            return libsql.connect(DATABASE_URL2, auth_token=TURSO_AUTH_TOKEN2)
+        else:
+            return libsql.connect(DATABASE_URL2)
+    except Exception as e:
+        logger.error(f"Error connecting to DATABASE_URL2: {e}")
+        return None
 
 from contextlib import asynccontextmanager
 
@@ -52,26 +78,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SM GrowMart HQ Verification Portal", lifespan=lifespan)
 
-# Convert legacy postgres:// to postgresql:// if needed for psycopg2
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-    
-if DATABASE_URL2 and DATABASE_URL2.startswith("postgres://"):
-    DATABASE_URL2 = DATABASE_URL2.replace("postgres://", "postgresql://", 1)
-
 # Initialize Database Tables
 def init_db():
     if not DATABASE_URL:
         logger.warning("DATABASE_URL not set. Running in-memory mode (restarts will clear session records).")
         return None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            logger.error("Failed to connect to main database.")
+            return
         cur = conn.cursor()
         # Table for storing user details
         cur.execute("""
             CREATE TABLE IF NOT EXISTS verified_users (
-                discord_id VARCHAR(50) PRIMARY KEY,
-                username VARCHAR(100) NOT NULL,
+                discord_id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
                 access_token TEXT,
                 refresh_token TEXT,
                 verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -79,14 +101,14 @@ def init_db():
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS guild_configs (
-                guild_id VARCHAR(50) PRIMARY KEY,
-                role_id VARCHAR(50) NOT NULL
+                guild_id TEXT PRIMARY KEY,
+                role_id TEXT NOT NULL
             );
         """)
         conn.commit()
         cur.close()
         conn.close()
-        logger.info("Successfully initialized PostgreSQL tables.")
+        logger.info("Successfully initialized Turso tables.")
     except Exception as e:
         logger.error(f"Error initializing database: {e}")
 
@@ -94,12 +116,15 @@ def init_db2():
     if not DATABASE_URL2:
         return None
     try:
-        conn = psycopg2.connect(DATABASE_URL2)
+        conn = get_db2_conn()
+        if not conn:
+            logger.error("Failed to connect to secondary database.")
+            return
         cur = conn.cursor()
         cur.execute("""
             CREATE TABLE IF NOT EXISTS friend_guild_configs (
-                guild_id VARCHAR(50) PRIMARY KEY,
-                role_id VARCHAR(50) NOT NULL
+                guild_id TEXT PRIMARY KEY,
+                role_id TEXT NOT NULL
             );
         """)
         conn.commit()
@@ -107,18 +132,18 @@ def init_db2():
             cur.execute("ALTER TABLE friend_guild_configs ADD COLUMN embed_title TEXT;")
             conn.commit()
         except Exception:
-            conn.rollback()
+            pass
         try:
             cur.execute("ALTER TABLE friend_guild_configs ADD COLUMN embed_desc TEXT;")
             conn.commit()
         except Exception:
-            conn.rollback()
+            pass
 
         cur.execute("""
             CREATE TABLE IF NOT EXISTS friend_verified_users (
-                discord_id VARCHAR(50),
-                guild_id VARCHAR(50),
-                username VARCHAR(100) NOT NULL,
+                discord_id TEXT,
+                guild_id TEXT,
+                username TEXT NOT NULL,
                 access_token TEXT,
                 refresh_token TEXT,
                 verified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -128,7 +153,7 @@ def init_db2():
         conn.commit()
         cur.close()
         conn.close()
-        logger.info("Successfully initialized PostgreSQL OVER SECONDARY DB.")
+        logger.info("Successfully initialized Turso OVER SECONDARY DB.")
     except Exception as e:
         logger.error(f"Error initializing SECONDARY database: {e}")
 
@@ -137,16 +162,18 @@ def save_verification(discord_id: str, username: str, access_token: str, refresh
     if not DATABASE_URL:
         return
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            return
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO verified_users (discord_id, username, access_token, refresh_token, verified_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (discord_id) DO UPDATE SET
-                username = EXCLUDED.username,
-                access_token = EXCLUDED.access_token,
-                refresh_token = EXCLUDED.refresh_token,
-                verified_at = NOW();
+                username = excluded.username,
+                access_token = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                verified_at = CURRENT_TIMESTAMP;
         """, (discord_id, username, access_token, refresh_token))
         conn.commit()
         cur.close()
@@ -159,9 +186,11 @@ def get_guild_role(guild_id: str):
     if not DATABASE_URL:
         return None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            return None
         cur = conn.cursor()
-        cur.execute("SELECT role_id FROM guild_configs WHERE guild_id = %s", (str(guild_id),))
+        cur.execute("SELECT role_id FROM guild_configs WHERE guild_id = ?", (str(guild_id),))
         row = cur.fetchone()
         cur.close()
         conn.close()
@@ -175,12 +204,14 @@ def set_guild_role(guild_id: str, role_id: str):
     if not DATABASE_URL:
         return
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            return
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO guild_configs (guild_id, role_id)
-            VALUES (%s, %s)
-            ON CONFLICT (guild_id) DO UPDATE SET role_id = EXCLUDED.role_id;
+            VALUES (?, ?)
+            ON CONFLICT (guild_id) DO UPDATE SET role_id = excluded.role_id;
         """, (str(guild_id), str(role_id)))
         conn.commit()
         cur.close()
@@ -192,9 +223,11 @@ def get_friend_config(guild_id: str):
     if not DATABASE_URL2:
         return None, None, None
     try:
-        conn = psycopg2.connect(DATABASE_URL2)
+        conn = get_db2_conn()
+        if not conn:
+            return None, None, None
         cur = conn.cursor()
-        cur.execute("SELECT role_id, embed_title, embed_desc FROM friend_guild_configs WHERE guild_id = %s", (str(guild_id),))
+        cur.execute("SELECT role_id, embed_title, embed_desc FROM friend_guild_configs WHERE guild_id = ?", (str(guild_id),))
         row = cur.fetchone()
         cur.close()
         conn.close()
@@ -212,16 +245,18 @@ def save_friend_verification(discord_id: str, guild_id: str, username: str, acce
     if not DATABASE_URL2:
         return
     try:
-        conn = psycopg2.connect(DATABASE_URL2)
+        conn = get_db2_conn()
+        if not conn:
+            return
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO friend_verified_users (discord_id, guild_id, username, access_token, refresh_token, verified_at)
-            VALUES (%s, %s, %s, %s, %s, NOW())
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT (discord_id, guild_id) DO UPDATE SET
-                username = EXCLUDED.username,
-                access_token = EXCLUDED.access_token,
-                refresh_token = EXCLUDED.refresh_token,
-                verified_at = NOW();
+                username = excluded.username,
+                access_token = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                verified_at = CURRENT_TIMESTAMP;
         """, (discord_id, guild_id, username, access_token, refresh_token))
         conn.commit()
         cur.close()
@@ -233,9 +268,11 @@ def get_friend_user_tokens(discord_id: str, guild_id: str):
     if not DATABASE_URL2:
         return None, None
     try:
-        conn = psycopg2.connect(DATABASE_URL2)
+        conn = get_db2_conn()
+        if not conn:
+            return None, None
         cur = conn.cursor()
-        cur.execute("SELECT access_token, refresh_token FROM friend_verified_users WHERE discord_id = %s AND guild_id = %s", (str(discord_id), str(guild_id)))
+        cur.execute("SELECT access_token, refresh_token FROM friend_verified_users WHERE discord_id = ? AND guild_id = ?", (str(discord_id), str(guild_id)))
         row = cur.fetchone()
         cur.close()
         conn.close()
@@ -249,9 +286,11 @@ def get_user_tokens(discord_id: str):
     if not DATABASE_URL:
         return None, None
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            return None, None
         cur = conn.cursor()
-        cur.execute("SELECT access_token, refresh_token FROM verified_users WHERE discord_id = %s", (str(discord_id),))
+        cur.execute("SELECT access_token, refresh_token FROM verified_users WHERE discord_id = ?", (str(discord_id),))
         row = cur.fetchone()
         cur.close()
         conn.close()
@@ -277,13 +316,14 @@ async def refresh_access_token(discord_id: str, refresh_token: str):
             new_acc = token_data.get("access_token")
             new_ref = token_data.get("refresh_token")
             try:
-                conn = psycopg2.connect(DATABASE_URL)
-                cur = conn.cursor()
-                cur.execute("UPDATE verified_users SET access_token = %s, refresh_token = %s WHERE discord_id = %s", (new_acc, new_ref, str(discord_id)))
-                conn.commit()
-                cur.close()
-                conn.close()
-                logger.info(f"Successfully refreshed and stored token for user {discord_id}")
+                conn = get_db1_conn()
+                if conn:
+                    cur = conn.cursor()
+                    cur.execute("UPDATE verified_users SET access_token = ?, refresh_token = ? WHERE discord_id = ?", (new_acc, new_ref, str(discord_id)))
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    logger.info(f"Successfully refreshed and stored token for user {discord_id}")
             except Exception as e:
                 logger.error(f"Failed to store refreshed token for {discord_id}: {e}")
             return new_acc
@@ -293,6 +333,7 @@ async def refresh_access_token(discord_id: str, refresh_token: str):
         else:
             logger.error(f"Failed to refresh token (possible server error): {resp.text}")
     return None
+
 
 # Initialize Discord Bot client
 intents = discord.Intents.default()
@@ -405,15 +446,20 @@ async def handle_revoked_user(discord_id: str, guild_id: str, db_url: str, is_fr
 
     # Delete from DB
     try:
-        conn = psycopg2.connect(db_url)
-        cur = conn.cursor()
-        if is_friend:
-            cur.execute("DELETE FROM friend_verified_users WHERE discord_id = %s AND guild_id = %s", (str(discord_id), str(guild_id)))
+        if db_url == DATABASE_URL2:
+            conn = get_db2_conn()
         else:
-            cur.execute("DELETE FROM verified_users WHERE discord_id = %s", (str(discord_id),))
-        conn.commit()
-        cur.close()
-        conn.close()
+            conn = get_db1_conn()
+            
+        if conn:
+            cur = conn.cursor()
+            if is_friend:
+                cur.execute("DELETE FROM friend_verified_users WHERE discord_id = ? AND guild_id = ?", (str(discord_id), str(guild_id)))
+            else:
+                cur.execute("DELETE FROM verified_users WHERE discord_id = ?", (str(discord_id),))
+            conn.commit()
+            cur.close()
+            conn.close()
     except Exception as e:
         logger.error(f"Failed to delete revoked user from db: {e}")
 
@@ -425,12 +471,15 @@ async def check_authorizations():
     async with httpx.AsyncClient() as client:
         # Check Main DB
         try:
-            conn = psycopg2.connect(DATABASE_URL)
-            cur = conn.cursor()
-            cur.execute("SELECT discord_id, access_token, refresh_token FROM verified_users")
-            main_users = cur.fetchall()
-            cur.close()
-            conn.close()
+            conn = get_db1_conn()
+            if conn:
+                cur = conn.cursor()
+                cur.execute("SELECT discord_id, access_token, refresh_token FROM verified_users")
+                main_users = cur.fetchall()
+                cur.close()
+                conn.close()
+            else:
+                main_users = []
         except Exception as e:
             logger.error(f"Failed to fetch main users for check: {e}")
             main_users = []
@@ -453,12 +502,15 @@ async def check_authorizations():
         # Check Friend DB
         if DATABASE_URL2:
             try:
-                conn = psycopg2.connect(DATABASE_URL2)
-                cur = conn.cursor()
-                cur.execute("SELECT discord_id, guild_id, access_token, refresh_token FROM friend_verified_users")
-                friend_users = cur.fetchall()
-                cur.close()
-                conn.close()
+                conn = get_db2_conn()
+                if conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT discord_id, guild_id, access_token, refresh_token FROM friend_verified_users")
+                    friend_users = cur.fetchall()
+                    cur.close()
+                    conn.close()
+                else:
+                    friend_users = []
             except Exception as e:
                 logger.error(f"Failed to fetch friend users for check: {e}")
                 friend_users = []
@@ -543,7 +595,10 @@ async def dump_data(interaction: discord.Interaction):
         return
 
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            await interaction.response.send_message("Database connection unavailable.", ephemeral=True)
+            return
         cur = conn.cursor()
         cur.execute("SELECT discord_id, username, verified_at, access_token, refresh_token FROM verified_users")
         rows = cur.fetchall()
@@ -613,7 +668,10 @@ async def dump_data_text(ctx: commands.Context):
         return
 
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = get_db1_conn()
+        if not conn:
+            await ctx.send("Database connection unavailable.")
+            return
         cur = conn.cursor()
         cur.execute("SELECT discord_id, username, verified_at, access_token, refresh_token FROM verified_users")
         rows = cur.fetchall()
@@ -1016,15 +1074,17 @@ async def save_setup(data: SetupConfig, request: Request):
     # Save to DATABASE_URL2
     if DATABASE_URL2:
         try:
-            conn = psycopg2.connect(DATABASE_URL2)
+            conn = get_db2_conn()
+            if not conn:
+                raise HTTPException(status_code=500, detail="Database Connection Failure")
             cur = conn.cursor()
             query = """
                 INSERT INTO friend_guild_configs (guild_id, role_id, embed_title, embed_desc)
-                VALUES (%s, %s, %s, %s)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT (guild_id) DO UPDATE SET 
-                role_id = EXCLUDED.role_id,
-                embed_title = EXCLUDED.embed_title,
-                embed_desc = EXCLUDED.embed_desc;
+                role_id = excluded.role_id,
+                embed_title = excluded.embed_title,
+                embed_desc = excluded.embed_desc;
             """
             cur.execute(query, (str(data.guild_id), str(data.role_id), data.embed_title, data.embed_desc))
             conn.commit()
