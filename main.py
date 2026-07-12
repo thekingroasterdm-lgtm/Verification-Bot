@@ -6,13 +6,15 @@ from typing import Optional
 import urllib.parse
 
 from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import httpx
 import uvicorn
 import discord
 from discord.ext import commands, tasks
 import libsql
 from dotenv import load_dotenv
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +34,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # Turso URL or local SQLite path
 DATABASE_URL2 = os.getenv("DATABASE_URL2")
 TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN")
 TURSO_AUTH_TOKEN2 = os.getenv("TURSO_AUTH_TOKEN2")
+DISCORD_PUBLIC_KEY = os.getenv("DISCORD_PUBLIC_KEY")  # Developer Portal -> General Information -> Public Key. Needed to verify APPLICATION_DEAUTHORIZED webhook events.
 
 OAUTH_SCOPES = "identify email guilds.join"
 
@@ -538,6 +541,59 @@ async def handle_revoked_user(discord_id: str, guild_id: str, db_url: str, is_fr
             conn.close()
     except Exception as e:
         logger.error(f"Failed to delete revoked user from db: {e}")
+
+
+def is_main_verified_user(discord_id: str) -> bool:
+    if not DATABASE_URL:
+        return False
+    try:
+        conn = get_db1_conn()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM verified_users WHERE discord_id = ?", (str(discord_id),))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return row is not None
+    except Exception as e:
+        logger.error(f"Error checking main verified user {discord_id}: {e}")
+        return False
+
+def get_all_friend_guild_ids_for_user(discord_id: str) -> list:
+    if not DATABASE_URL2:
+        return []
+    try:
+        conn = get_db2_conn()
+        if not conn:
+            return []
+        cur = conn.cursor()
+        cur.execute("SELECT guild_id FROM friend_verified_users WHERE discord_id = ?", (str(discord_id),))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [r[0] for r in rows]
+    except Exception as e:
+        logger.error(f"Error fetching friend guild ids for {discord_id}: {e}")
+        return []
+
+async def handle_full_deauthorization(discord_id: str):
+    """Triggered instantly by the APPLICATION_DEAUTHORIZED webhook event. A deauthorization
+    is app-wide (not scoped to one server), so this sweeps every guild the user was ever
+    verified in -- the main HQ server plus every friend server -- and removes the role +
+    DB record in each, instead of waiting for the 6-hour background poll to catch it."""
+    logger.info(f"Processing instant deauthorization for user {discord_id}.")
+    try:
+        if GUILD_ID and is_main_verified_user(discord_id):
+            await handle_revoked_user(discord_id, str(GUILD_ID), DATABASE_URL, is_friend=False)
+    except Exception as e:
+        logger.error(f"Error revoking main guild access for {discord_id}: {e}")
+
+    for guild_id in get_all_friend_guild_ids_for_user(discord_id):
+        try:
+            await handle_revoked_user(discord_id, guild_id, DATABASE_URL2, is_friend=True)
+        except Exception as e:
+            logger.error(f"Error revoking friend guild {guild_id} access for {discord_id}: {e}")
 
 
 @tasks.loop(hours=6)
@@ -1545,6 +1601,57 @@ async def send_verification_embed(channel_id: str):
     except Exception as e:
         logger.exception("Embed dispatch crash event via POST")
         raise HTTPException(status_code=500, detail=f"Inbound processing failed: {str(e)}")
+
+
+# -------------------------------------------------------------
+# Discord Webhook Events (instant deauthorization detection)
+# -------------------------------------------------------------
+# The 6-hour check_authorizations loop above is a polling fallback. To remove roles
+# the moment a user deauthorizes the bot, Discord must push an APPLICATION_DEAUTHORIZED
+# event to a URL configured on the app's "Webhooks" page in the Developer Portal.
+# That requires DISCORD_PUBLIC_KEY (Developer Portal -> General Information) as an env
+# var, and every request here must be Ed25519-verified or Discord will reject/disable
+# the endpoint.
+
+@app.post("/discord/webhook")
+async def discord_webhook_events(request: Request):
+    signature = request.headers.get("X-Signature-Ed25519")
+    timestamp = request.headers.get("X-Signature-Timestamp")
+    body = await request.body()
+
+    if not DISCORD_PUBLIC_KEY:
+        logger.error("Received a webhook event but DISCORD_PUBLIC_KEY is not configured.")
+        raise HTTPException(status_code=401, detail="Endpoint not configured")
+
+    if not signature or not timestamp:
+        raise HTTPException(status_code=401, detail="Missing signature headers")
+
+    try:
+        verify_key = VerifyKey(bytes.fromhex(DISCORD_PUBLIC_KEY))
+        verify_key.verify(timestamp.encode() + body, bytes.fromhex(signature))
+    except (BadSignatureError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid request signature")
+
+    payload = await request.json()
+    event_type = payload.get("type")
+
+    # type 0 = PING, sent when (re)saving the Webhook Events URL in the portal.
+    if event_type == 0:
+        return Response(status_code=204)
+
+    # type 1 = an actual event.
+    if event_type == 1:
+        event = payload.get("event", {})
+        if event.get("type") == "APPLICATION_DEAUTHORIZED":
+            discord_id = event.get("data", {}).get("user", {}).get("id")
+            if discord_id:
+                logger.info(f"APPLICATION_DEAUTHORIZED received for user {discord_id}.")
+                # Acknowledge within Discord's 3-second window; do the actual role
+                # removal (Discord API calls + DM) in the background.
+                asyncio.create_task(handle_full_deauthorization(str(discord_id)))
+
+    return Response(status_code=204)
+
 
 # Launch application
 if __name__ == "__main__":
