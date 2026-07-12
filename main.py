@@ -219,6 +219,17 @@ def set_guild_role(guild_id: str, role_id: str):
     except Exception as e:
         logger.error(f"Error saving guild config: {e}")
 
+def resolve_main_role_id() -> Optional[str]:
+    """Role to grant in the main guild. Whatever was picked via /setup (stored in
+    guild_configs) takes priority; falls back to VERIFIED_ROLE_ID env var if nothing
+    has been saved yet. Without this, /setup silently saved a role that verification
+    never actually read, so it always granted the (possibly stale) env-var role."""
+    if GUILD_ID:
+        db_role = get_guild_role(str(GUILD_ID))
+        if db_role:
+            return db_role
+    return ROLE_ID
+
 def get_friend_config(guild_id: str):
     if not DATABASE_URL2:
         return None, None, None
@@ -454,7 +465,7 @@ async def handle_revoked_user(discord_id: str, guild_id: str, db_url: str, is_fr
         if is_friend:
             role_id = get_friend_role(guild_id)
         else:
-            role_id = ROLE_ID
+            role_id = resolve_main_role_id()
             
         role = guild.get_role(int(role_id)) if role_id else None
         
@@ -659,7 +670,7 @@ async def guild_stats_slash(interaction: discord.Interaction):
         # Fetch configured role
         role_id = None
         if is_main:
-            role_id = ROLE_ID
+            role_id = resolve_main_role_id()
         else:
             role_id = get_friend_role(guild_id)
             
@@ -1020,7 +1031,7 @@ async def on_member_remove(member):
     if str(member.guild.id) == str(GUILD_ID):
         acc, ref = get_user_tokens(str(member.id))
         if acc:
-            await perform_auto_join(member.id, str(member.guild.id), ROLE_ID, acc, ref)
+            await perform_auto_join(member.id, str(member.guild.id), resolve_main_role_id(), acc, ref)
     else:
         # Check if they leave a Friend Server and we have friend verification data for them for THAT server
         acc, ref = get_friend_user_tokens(str(member.id), str(member.guild.id))
@@ -1382,14 +1393,15 @@ async def callback_handler(code: Optional[str] = None, state: Optional[str] = No
                 return True, "Success", 200
 
             # 3. Dynamic server role assign action!
-            if not GUILD_ID or not ROLE_ID:
+            main_role_id = resolve_main_role_id()
+            if not GUILD_ID or not main_role_id:
                 return HTMLResponse(
-                    content=render_error("Deployment Targets Missing", "Target server (GUILD_ID) and reward category (VERIFIED_ROLE_ID) are missing.", retry_url),
+                    content=render_error("Deployment Targets Missing", "Target server (GUILD_ID) and reward role (set via /setup, or VERIFIED_ROLE_ID) are missing.", retry_url),
                     status_code=500
                 )
 
             # Always verify and add to main server
-            main_success, main_err, main_code = await verify_user_in_guild(GUILD_ID, ROLE_ID)
+            main_success, main_err, main_code = await verify_user_in_guild(GUILD_ID, main_role_id)
             if not main_success:
                 return HTMLResponse(content=render_error("Verification Failed (Main)", main_err, retry_url), status_code=main_code)
 
