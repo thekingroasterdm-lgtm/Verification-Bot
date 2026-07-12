@@ -252,6 +252,30 @@ def get_friend_role(guild_id: str):
     role_id, _, _ = get_friend_config(guild_id)
     return role_id
 
+def set_friend_role(guild_id: str, role_id: str):
+    """Save the verified role for a non-main ('friend') guild into friend_guild_configs
+    (DB2) — the same table get_friend_role() reads from. This mirrors set_guild_role(),
+    but for any server other than the main GUILD_ID."""
+    if not DATABASE_URL2:
+        return False
+    try:
+        conn = get_db2_conn()
+        if not conn:
+            return False
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO friend_guild_configs (guild_id, role_id)
+            VALUES (?, ?)
+            ON CONFLICT (guild_id) DO UPDATE SET role_id = excluded.role_id;
+        """, (str(guild_id), str(role_id)))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return True
+    except Exception as e:
+        logger.error(f"Error saving friend guild config: {e}")
+        return False
+
 def save_friend_verification(discord_id: str, guild_id: str, username: str, access_token: str, refresh_token: str):
     if not DATABASE_URL2:
         return
@@ -625,7 +649,25 @@ async def setup_slash(interaction: discord.Interaction, role: discord.Role):
         return
         
     try:
-        set_guild_role(str(interaction.guild.id), str(role.id))
+        guild_id = str(interaction.guild.id)
+        if guild_id == str(GUILD_ID):
+            # Main HQ server -> guild_configs (DB1), read by resolve_main_role_id()
+            set_guild_role(guild_id, str(role.id))
+        else:
+            # Any other server -> friend_guild_configs (DB2), read by get_friend_role()
+            # This is the table the /callback verification flow actually checks for
+            # non-main guilds. Previously /setup always wrote to guild_configs no matter
+            # which server it ran in, so a role saved here was never read back and no
+            # role was ever granted after verifying in a second/"friend" server.
+            saved = set_friend_role(guild_id, str(role.id))
+            if not saved:
+                await interaction.response.send_message(
+                    "Could not save the role: this bot's secondary database (DATABASE_URL2) "
+                    "isn't configured, so role assignment for non-main servers can't be stored. "
+                    "Set DATABASE_URL2 (and TURSO_AUTH_TOKEN2 if applicable) in your environment first.",
+                    ephemeral=True
+                )
+                return
         await dispatch_premium_embed(interaction.channel_id)
         await interaction.response.send_message(f"Verification embed sent and role `{role.name}` saved for this server!", ephemeral=True)
     except Exception as e:
@@ -1150,6 +1192,8 @@ async def bot_details(request: Request):
         "client_id_env": CLIENT_ID
     }
     return bot_info
+
+@app.get("/api/guild_details")
 async def get_guild_details(guild_id: str, request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header or not await verify_admin(auth_header, guild_id):
